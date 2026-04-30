@@ -31,4 +31,12 @@ def host_resources() -> ToolResult:
 
 def host_uptime() -> ToolResult:
     r = run_command(["uptime"])
-    return ToolResult(tool="host.uptime", command=r.command, exit_code=r.exit_code, stdout=r.stdout, stderr=r.stderr, duration_ms=r.duration_ms, ok=r.exit_code == 0)
+    return ToolResult(
+        tool="host.uptime",
+        command=r.command,
+        exit_code=r.exit_code,
+        stdout=r.stdout,
+        stderr=r.stderr,
+        duration_ms=r.duration_ms,
+        ok=r.exit_code == 0,
+    )

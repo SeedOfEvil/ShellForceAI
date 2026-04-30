@@ -17,7 +17,9 @@ class AuditStorage:
             f.write(json.dumps(record) + "\n")
 
     def list_sessions(self) -> list[str]:
-        return sorted([p.stem for p in self.sessions_dir.glob("*.json") if p.name != "sessions.jsonl"])
+        return sorted(
+            [p.stem for p in self.sessions_dir.glob("*.json") if p.name != "sessions.jsonl"]
+        )
 
     def show(self, sid: str) -> str | None:
         p = self.sessions_dir / f"{sid}.json"

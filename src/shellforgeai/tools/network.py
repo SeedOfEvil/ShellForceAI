@@ -10,17 +10,41 @@ from .base import ToolResult
 
 def listeners() -> ToolResult:
     r = run_command(["ss", "-lntup"])
-    return ToolResult(tool="network.listeners", command=r.command, exit_code=r.exit_code, stdout=r.stdout, stderr=r.stderr, duration_ms=r.duration_ms, ok=r.exit_code == 0)
+    return ToolResult(
+        tool="network.listeners",
+        command=r.command,
+        exit_code=r.exit_code,
+        stdout=r.stdout,
+        stderr=r.stderr,
+        duration_ms=r.duration_ms,
+        ok=r.exit_code == 0,
+    )
 
 
 def routes() -> ToolResult:
     r = run_command(["ip", "route", "show"])
-    return ToolResult(tool="network.routes", command=r.command, exit_code=r.exit_code, stdout=r.stdout, stderr=r.stderr, duration_ms=r.duration_ms, ok=r.exit_code == 0)
+    return ToolResult(
+        tool="network.routes",
+        command=r.command,
+        exit_code=r.exit_code,
+        stdout=r.stdout,
+        stderr=r.stderr,
+        duration_ms=r.duration_ms,
+        ok=r.exit_code == 0,
+    )
 
 
 def dns() -> ToolResult:
     r = run_command(["cat", "/etc/resolv.conf"])
-    return ToolResult(tool="network.dns", command=r.command, exit_code=r.exit_code, stdout=r.stdout, stderr=r.stderr, duration_ms=r.duration_ms, ok=r.exit_code == 0)
+    return ToolResult(
+        tool="network.dns",
+        command=r.command,
+        exit_code=r.exit_code,
+        stdout=r.stdout,
+        stderr=r.stderr,
+        duration_ms=r.duration_ms,
+        ok=r.exit_code == 0,
+    )
 
 
 def connect_test_readonly(target: str, port: int = 443, timeout_seconds: int = 3) -> ToolResult:
@@ -32,4 +56,6 @@ def connect_test_readonly(target: str, port: int = 443, timeout_seconds: int = 3
         out = f"resolved={ip}; tcp_connect_ok={host}:{port}"
         return ToolResult(tool="network.connect_test_readonly", stdout=out)
     except Exception as exc:
-        return ToolResult(tool="network.connect_test_readonly", ok=False, exit_code=1, stderr=str(exc))
+        return ToolResult(
+            tool="network.connect_test_readonly", ok=False, exit_code=1, stderr=str(exc)
+        )

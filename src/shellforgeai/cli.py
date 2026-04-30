@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import json
+import platform
+import sys
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -18,7 +20,13 @@ from shellforgeai.knowledge.search import search_local
 from shellforgeai.tools import host, journal, registry, systemd
 from shellforgeai.version import __version__
 
-app = typer.Typer()
+app = typer.Typer(no_args_is_help=True)
+inspect_app = typer.Typer()
+tools_app = typer.Typer()
+audit_app = typer.Typer()
+app.add_typer(inspect_app, name="inspect")
+app.add_typer(tools_app, name="tools")
+app.add_typer(audit_app, name="audit")
 console = Console()
 
 
@@ -27,39 +35,141 @@ def _ctx(ctx: typer.Context) -> RuntimeContext:
 
 
 @app.callback()
-def main(ctx: typer.Context, version: bool = False, config: Path | None = None, profile: str = "inspect", mode: str = "inspect", verbose: bool = False) -> None:
+def main(
+    ctx: typer.Context,
+    version: Annotated[bool, typer.Option("--version")] = False,
+    config: Path | None = None,
+    profile: str = "inspect",
+    mode: str = "inspect",
+    verbose: bool = False,
+) -> None:
     if version:
         console.print(__version__)
         raise typer.Exit()
     settings = load_settings(config)
     prof = load_profile(profile, Path.cwd())
     session = build_session_context(settings, prof, mode, Path.cwd())
-    ctx.obj = {"runtime": RuntimeContext(settings=settings, profile=prof, session=session, verbose=verbose)}
+    ctx.obj = {
+        "runtime": RuntimeContext(settings=settings, profile=prof, session=session, verbose=verbose)
+    }
 
 
 @app.command()
-def diagnose(ctx: typer.Context, target: str, online: bool = False, since: str = "30m", json_output: bool = typer.Option(False, "--json"), save_plan: bool = False) -> None:
+def doctor(ctx: typer.Context) -> None:
+    runtime = _ctx(ctx)
+    audit = AuditStorage(runtime.session.data_dir)
+    console.print("ShellForgeAI")
+    console.print(
+        f"version={__version__} python={sys.version.split()[0]} platform={platform.system()}"
+    )
+    console.print(f"profile={runtime.profile.name} mode={runtime.session.mode}")
+    console.print(f"data_dir={runtime.session.data_dir} audit_dir={audit.sessions_dir}")
+    console.print(
+        f"tools={len(registry.list_tools())} model={runtime.settings.model.provider}/{runtime.settings.model.model}"
+    )
+
+
+@inspect_app.command("host")
+def inspect_host() -> None:
+    for r in [host.host_info(), host.host_resources(), host.host_uptime()]:
+        console.print(f"[{r.tool}] ok={r.ok} code={r.exit_code}")
+        console.print((r.stdout or r.stderr).strip() or "not available")
+
+
+@inspect_app.command("service")
+def inspect_service(service: str) -> None:
+    r = systemd.status(service)
+    console.print(f"[{r.tool}] ok={r.ok} code={r.exit_code}")
+    console.print((r.stdout or r.stderr).strip() or "not available")
+
+
+@app.command()
+def logs(service: str, since: str = "30m") -> None:
+    r = journal.unit(service, since=since)
+    console.print(f"[{r.tool}] ok={r.ok} code={r.exit_code}")
+    console.print((r.stdout or r.stderr).strip() or "no logs")
+
+
+@tools_app.command("list")
+def tools_list() -> None:
+    for t in sorted(registry.list_tools(), key=lambda x: x.name):
+        console.print(f"{t.name}\t{t.category}\t{t.risk.value}")
+
+
+@tools_app.command("describe")
+def tools_describe(tool_name: str) -> None:
+    t = registry.get_tool(tool_name)
+    if t is None:
+        raise typer.Exit(code=1)
+    console.print(t.model_dump_json(indent=2))
+
+
+@audit_app.command("list")
+def audit_list(ctx: typer.Context) -> None:
+    runtime = _ctx(ctx)
+    sessions = AuditStorage(runtime.session.data_dir).list_sessions()
+    if not sessions:
+        console.print("No sessions.")
+        return
+    for sid in sessions:
+        console.print(sid)
+
+
+@audit_app.command("show")
+def audit_show(ctx: typer.Context, session_id: str) -> None:
+    runtime = _ctx(ctx)
+    val = AuditStorage(runtime.session.data_dir).show(session_id)
+    if val is None:
+        raise typer.Exit(code=1)
+    console.print(val)
+
+
+@app.command()
+def diagnose(
+    ctx: typer.Context,
+    target: str,
+    online: bool = False,
+    since: str = "30m",
+    json_output: bool = typer.Option(False, "--json"),
+    save_plan: bool = False,
+) -> None:
     runtime = _ctx(ctx)
     result = diagnose_target(runtime, target, online=online, since=since)
     audit = AuditStorage(runtime.session.data_dir)
     ev_path = runtime.session.artifact_dir / "evidence.json"
-    ev_path.write_text(result.evidence.model_dump_json(indent=2))
+    ev_path.write_text(result.evidence.model_dump_json(indent=2), encoding="utf-8")
     plan_path = runtime.session.artifact_dir / "plan.json"
     if save_plan:
-        plan_path.write_text(result.proposed_plan.model_dump_json(indent=2))
-    rec = {"session_id": runtime.session.session_id, "command": "diagnose", "target": target, "mode": runtime.session.mode, "profile": runtime.profile.name, "tools_called": [i.source for i in result.evidence.items], "artifacts": [str(ev_path)] + ([str(plan_path)] if save_plan else []), "warnings": result.warnings, "errors": result.errors, "summary": f"diagnosed {target}"}
+        plan_path.write_text(result.proposed_plan.model_dump_json(indent=2), encoding="utf-8")
+    rec = {
+        "session_id": runtime.session.session_id,
+        "command": "diagnose",
+        "target": target,
+        "mode": runtime.session.mode,
+        "profile": runtime.profile.name,
+        "tools_called": [i.source for i in result.evidence.items],
+        "artifacts": [str(ev_path)] + ([str(plan_path)] if save_plan else []),
+        "warnings": result.warnings,
+        "errors": result.errors,
+        "summary": f"diagnosed {target}",
+    }
     audit.append(rec)
-    if json_output:
-        console.print(result.model_dump_json(indent=2))
-    else:
-        console.print(f"session={result.session_id} target={target} type={result.target_type}")
-        console.print(f"evidence_items={len(result.evidence.items)} findings={len(result.findings)}")
+    console.print(
+        result.model_dump_json(indent=2)
+        if json_output
+        else f"session={result.session_id} target={target} type={result.target_type}"
+    )
 
 
 @app.command()
 def research(ctx: typer.Context, query: str) -> None:
     runtime = _ctx(ctx)
-    hits = search_local(runtime.settings.knowledge.local_paths + [str(Path.cwd() / "SHELLFORGE.md")], query)
+    hits = search_local(
+        runtime.settings.knowledge.local_paths + [str(Path.cwd() / "SHELLFORGE.md")], query
+    )
+    if not hits:
+        console.print("No local knowledge hits.")
+        return
     for h in hits:
         console.print(f"{h.path}:{h.line} {h.snippet}")
 
@@ -68,9 +178,21 @@ def research(ctx: typer.Context, query: str) -> None:
 def plan(ctx: typer.Context, goal: str) -> None:
     runtime = _ctx(ctx)
     t = classify_target(goal).value
-    plan = Plan(plan_id=f"plan_{runtime.session.session_id}", goal=goal, session_id=runtime.session.session_id, steps=[PlanStep(step_id="1", title="Collect evidence", description=f"Use diagnose for {t}"), PlanStep(step_id="2", title="Review", description="Review findings and confirm next safe steps")])
+    p = Plan(
+        plan_id=f"plan_{runtime.session.session_id}",
+        goal=goal,
+        session_id=runtime.session.session_id,
+        steps=[
+            PlanStep(step_id="1", title="Collect evidence", description=f"Use diagnose for {t}"),
+            PlanStep(
+                step_id="2",
+                title="Review",
+                description="Review findings and confirm next safe steps",
+            ),
+        ],
+    )
     out = runtime.session.artifact_dir / "plan.json"
-    out.write_text(plan.model_dump_json(indent=2))
+    out.write_text(p.model_dump_json(indent=2), encoding="utf-8")
     console.print(str(out))
 
 
@@ -78,5 +200,7 @@ def plan(ctx: typer.Context, goal: str) -> None:
 def apply(plan_file: Path) -> None:
     if not plan_file.exists():
         raise typer.BadParameter("plan file missing")
-    Plan.model_validate_json(plan_file.read_text())
-    console.print("Apply execution is intentionally disabled in PR2. Plan validation is available; execution will be introduced after safety hardening.")
+    Plan.model_validate_json(plan_file.read_text(encoding="utf-8"))
+    console.print(
+        "Apply execution is intentionally disabled in this alpha. Plan validation is available; execution will be introduced after safety hardening."
+    )

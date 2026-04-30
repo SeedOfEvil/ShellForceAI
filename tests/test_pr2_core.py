@@ -16,7 +16,12 @@ def test_truncate_text():
 
 
 def test_plan_model_serialization():
-    p = Plan(plan_id="p1", goal="g", session_id="s1", steps=[PlanStep(step_id="1", title="t", description="d")])
+    p = Plan(
+        plan_id="p1",
+        goal="g",
+        session_id="s1",
+        steps=[PlanStep(step_id="1", title="t", description="d")],
+    )
     assert '"plan_id":"p1"' in p.model_dump_json()
 
 

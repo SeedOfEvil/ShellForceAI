@@ -28,7 +28,9 @@ class SessionContext(BaseModel):
     breakglass: bool
 
 
-def build_session_context(settings: Settings, profile: Profile, mode: str, cwd: Path) -> SessionContext:
+def build_session_context(
+    settings: Settings, profile: Profile, mode: str, cwd: Path
+) -> SessionContext:
     now = datetime.now(timezone.utc)
     sid = f"sf_{now.strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:6]}"
     data_dir = Path(settings.app.data_dir).expanduser()
