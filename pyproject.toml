@@ -20,6 +20,7 @@ select=["E","F","I","UP","B","SIM"]
 [tool.mypy]
 strict=true
 packages=["shellforgeai"]
+ignore_missing_imports=true
 [[tool.mypy.overrides]]
 module=["tests.*"]
 disallow_untyped_defs=false

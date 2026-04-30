@@ -14,7 +14,9 @@ class KnowledgeResult(BaseModel):
     score: float | None = None
 
 
-def search_local(paths: list[str], query: str, max_results: int = 20, max_file_bytes: int = 1_000_000) -> list[KnowledgeResult]:
+def search_local(
+    paths: list[str], query: str, max_results: int = 20, max_file_bytes: int = 1_000_000
+) -> list[KnowledgeResult]:
     out: list[KnowledgeResult] = []
     lowered = query.lower()
     for s in paths:
@@ -31,7 +33,11 @@ def search_local(paths: list[str], query: str, max_results: int = 20, max_file_b
                 continue
             for i, line in enumerate(txt.splitlines(), 1):
                 if lowered in line.lower():
-                    out.append(KnowledgeResult(source="local", path=str(f), line=i, title=f.name, snippet=line.strip()))
+                    out.append(
+                        KnowledgeResult(
+                            source="local", path=str(f), line=i, title=f.name, snippet=line.strip()
+                        )
+                    )
                     if len(out) >= max_results:
                         return out
                     break
