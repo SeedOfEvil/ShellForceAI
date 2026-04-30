@@ -1,0 +1,20 @@
+app:
+  name: ShellForgeAI
+  data_dir: ~/.local/share/shellforgeai
+  default_profile: inspect
+model:
+  provider: openai_compatible
+  base_url: http://localhost:11434/v1
+  model: local-model
+  api_key_env: SHELLFORGEAI_API_KEY
+  timeout_seconds: 30
+knowledge:
+  local_paths: ["./SHELLFORGE.md","./docs","/opt/runbooks","/usr/share/doc"]
+  online_enabled: false
+audit:
+  enabled: true
+  jsonl: sessions/audit.jsonl
+  artifact_output: artifacts
+policy:
+  default_action: ask
+  deny_danger_without_breakglass: true
