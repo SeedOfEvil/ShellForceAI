@@ -1,10 +1,10 @@
-from pathlib import Path
-
 from typer.testing import CliRunner
 
 from shellforgeai.cli import app
 from shellforgeai.interactive.banner import QUOTES, build_banner
+from shellforgeai.interactive.repl import _is_machine_health_question, _sanitize_provider_error
 from shellforgeai.llm.prompts import build_model_prompt
+from shellforgeai.llm.system_prompt import SHELLFORGE_SYSTEM_PROMPT
 from shellforgeai.version import get_build_info
 
 runner = CliRunner()
@@ -67,3 +67,19 @@ def test_no_empty_artifact_on_start(tmp_path, monkeypatch):
     assert res.exit_code == 0
     art = tmp_path / "artifacts"
     assert not art.exists() or not any(art.iterdir())
+
+
+def test_machine_health_intent_detection():
+    assert _is_machine_health_question("Any issue on this machine?")
+    assert _is_machine_health_question("Is this machine healthy?")
+    assert not _is_machine_health_question("tell me a joke")
+
+
+def test_bwrap_error_sanitized():
+    msg = _sanitize_provider_error("bwrap: No permissions to create a new namespace")
+    assert "provider/container sandbox limitation" in msg
+
+
+def test_system_prompt_disallows_direct_machine_inspection():
+    assert "Do not run shell commands" in SHELLFORGE_SYSTEM_PROMPT
+    assert "Use only evidence provided by ShellForgeAI" in SHELLFORGE_SYSTEM_PROMPT
