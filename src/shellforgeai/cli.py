@@ -23,7 +23,10 @@ from shellforgeai.llm.schemas import ModelRequest
 from shellforgeai.tools import host, journal, registry, systemd
 from shellforgeai.version import __version__
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer(
+    no_args_is_help=False,
+    invoke_without_command=True,
+)
 inspect_app = typer.Typer()
 tools_app = typer.Typer()
 audit_app = typer.Typer()
@@ -47,7 +50,7 @@ def _ctx(ctx: typer.Context) -> RuntimeContext:
     return ctx.obj["runtime"]
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
     version: Annotated[bool, typer.Option("--version")] = False,
@@ -55,6 +58,7 @@ def main(
     profile: str = "inspect",
     mode: str = "inspect",
     verbose: bool = False,
+    no_trust_cache: bool = typer.Option(False, "--no-trust-cache"),
 ) -> None:
     if version:
         console.print(f"ShellForgeAI {__version__}")
@@ -65,6 +69,17 @@ def main(
     ctx.obj = {
         "runtime": RuntimeContext(settings=settings, profile=prof, session=session, verbose=verbose)
     }
+    if ctx.invoked_subcommand is None and not version:
+        from shellforgeai.interactive import start_interactive
+
+        start_interactive(ctx.obj["runtime"], no_trust_cache=no_trust_cache)
+        raise typer.Exit()
+
+@app.command("interactive")
+def interactive(ctx: typer.Context, no_trust_cache: bool = typer.Option(False, "--no-trust-cache")) -> None:
+    from shellforgeai.interactive import start_interactive
+
+    start_interactive(_ctx(ctx), no_trust_cache=no_trust_cache)
 
 
 @app.command()

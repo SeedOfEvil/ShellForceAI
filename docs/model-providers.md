@@ -29,3 +29,7 @@ Env overrides:
 - Use `codex login --device-auth` for headless containers.
 - ShellForgeAI does not manage auth and does not parse `~/.codex/auth.json`.
 - ShellForgeAI invokes local Codex subprocess in read-only sandbox mode.
+
+## Interactive model behavior
+
+Interactive mode uses the same provider abstraction. If model is unavailable, it shows setup guidance (`shellforgeai model doctor`) and does not crash.
