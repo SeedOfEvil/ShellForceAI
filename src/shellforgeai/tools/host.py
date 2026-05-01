@@ -40,3 +40,16 @@ def host_uptime() -> ToolResult:
         duration_ms=r.duration_ms,
         ok=r.exit_code == 0,
     )
+
+
+def command_exists(command: str) -> ToolResult:
+    r = run_command(["which", command])
+    return ToolResult(
+        tool="command.exists",
+        command=r.command,
+        exit_code=r.exit_code,
+        stdout=r.stdout,
+        stderr=r.stderr,
+        duration_ms=r.duration_ms,
+        ok=r.exit_code == 0,
+    )

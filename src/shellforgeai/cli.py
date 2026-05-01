@@ -18,7 +18,7 @@ from shellforgeai.core.profiles import load_profile
 from shellforgeai.core.session import build_session_context
 from shellforgeai.knowledge.search import search_local
 from shellforgeai.llm.manager import build_provider
-from shellforgeai.llm.prompts import build_model_prompt
+from shellforgeai.llm.prompts import build_contextual_prompt, build_model_prompt
 from shellforgeai.llm.schemas import ModelRequest
 from shellforgeai.tools import host, journal, registry, systemd
 from shellforgeai.version import __version__
@@ -35,6 +35,14 @@ app.add_typer(model_app, name="model")
 console = Console()
 
 
+def _usage_line(resp) -> str:
+    u = resp.usage or {}
+    return (
+        f"Usage: input={u.get('input_tokens')}, cached={u.get('cached_input_tokens')}, "
+        f"output={u.get('output_tokens')}, reasoning={u.get('reasoning_output_tokens')}"
+    )
+
+
 def _ctx(ctx: typer.Context) -> RuntimeContext:
     return ctx.obj["runtime"]
 
@@ -49,7 +57,7 @@ def main(
     verbose: bool = False,
 ) -> None:
     if version:
-        console.print(__version__)
+        console.print(f"ShellForgeAI {__version__}")
         raise typer.Exit()
     settings = load_settings(config)
     prof = load_profile(profile, Path.cwd())
@@ -74,8 +82,6 @@ def doctor(ctx: typer.Context) -> None:
     )
 
 
-
-
 @model_app.command("doctor")
 def model_doctor(ctx: typer.Context) -> None:
     runtime = _ctx(ctx)
@@ -88,12 +94,31 @@ def model_doctor(ctx: typer.Context) -> None:
 
 
 @model_app.command("test")
-def model_test(ctx: typer.Context, prompt: str = "say hello") -> None:
+def model_test(
+    ctx: typer.Context,
+    prompt: str = "Reply with: Hello.",
+    raw: bool = typer.Option(False, "--raw"),
+    timeout: int | None = typer.Option(None, "--timeout"),
+    model: str | None = typer.Option(None, "--model"),
+) -> None:
     runtime = _ctx(ctx)
     provider = build_provider(runtime.settings)
-    req = ModelRequest(prompt=prompt, model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds)
+    req = ModelRequest(
+        prompt=prompt,
+        model=model or runtime.settings.model.model,
+        provider=runtime.settings.model.provider,
+        timeout_seconds=timeout or runtime.settings.model.timeout_seconds,
+        metadata={"raw": raw},
+    )
     resp = provider.complete(req)
     console.print(resp.text)
+    console.print(
+        f"\nProvider: {resp.provider}\nModel: {resp.model}\nOK: {str(resp.ok).lower()}\n{_usage_line(resp)}"
+    )
+    if raw and resp.raw and resp.raw.get("stdout_jsonl"):
+        console.print(resp.raw["stdout_jsonl"])
+
+
 @inspect_app.command("host")
 def inspect_host() -> None:
     for r in [host.host_info(), host.host_resources(), host.host_uptime()]:
@@ -158,6 +183,8 @@ def diagnose(
     json_output: bool = typer.Option(False, "--json"),
     save_plan: bool = False,
     model: bool = typer.Option(False, "--model"),
+    raw: bool = typer.Option(False, "--raw"),
+    full_context: bool = typer.Option(False, "--full-context"),
 ) -> None:
     runtime = _ctx(ctx)
     result = diagnose_target(runtime, target, online=online, since=since)
@@ -182,11 +209,45 @@ def diagnose(
     audit.append(rec)
     if model:
         provider = build_provider(runtime.settings)
-        prompt = build_model_prompt(f"Diagnose {target}", {"findings": [f.model_dump() for f in result.findings], "evidence": [i.model_dump() for i in result.evidence.items]})
-        mresp = provider.complete(ModelRequest(prompt=prompt, model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds))
-        (runtime.session.artifact_dir / "model-response.md").write_text(mresp.text, encoding="utf-8")
+        ctx_mode = "full" if full_context else "standard"
+        prompt = build_contextual_prompt(
+            f"Diagnose {target}",
+            {
+                "findings": [f.model_dump() for f in result.findings],
+                "evidence": [i.model_dump() for i in result.evidence.items],
+            },
+            mode=ctx_mode,
+        )
+        mresp = provider.complete(
+            ModelRequest(
+                prompt=prompt,
+                model=runtime.settings.model.model,
+                provider=runtime.settings.model.provider,
+                timeout_seconds=runtime.settings.model.timeout_seconds,
+                metadata={"raw": raw},
+            )
+        )
+        mpath = runtime.session.artifact_dir / "model-response.md"
+        mpath.write_text(
+            f"{mresp.text}\n\nProvider: {mresp.provider}\nModel: {mresp.model}\n{_usage_line(mresp)}",
+            encoding="utf-8",
+        )
+        spath = runtime.session.artifact_dir / "summary.md"
+        spath.write_text(
+            f"Session: {result.session_id}\nTarget: {target}\nType: {result.target_type.value}\nEvidence: {len(result.evidence.items)}\nFindings: {len(result.findings)}\n",
+            encoding="utf-8",
+        )
+        if raw and mresp.raw and mresp.raw.get("stdout_jsonl"):
+            (runtime.session.artifact_dir / "raw-model-events.jsonl").write_text(
+                mresp.raw["stdout_jsonl"], encoding="utf-8"
+            )
         console.print("Model-assisted analysis:\n" + mresp.text)
-    console.print(result.model_dump_json(indent=2) if json_output else f"session={result.session_id} target={target} type={result.target_type}")
+        console.print(f"Provider: {mresp.provider}\nModel: {mresp.model}\n{_usage_line(mresp)}")
+    console.print(
+        result.model_dump_json(indent=2)
+        if json_output
+        else f"Session: {result.session_id}\nTarget: {target}\nType: {result.target_type.value}\nEvidence: {len(result.evidence.items)} item(s)\nFindings: {len(result.findings)}\nArtifacts:\n- evidence: {ev_path}\n- plan: {plan_path if save_plan else 'not-saved'}\n- model response: {runtime.session.artifact_dir / 'model-response.md' if model else 'n/a'}\n- summary: {runtime.session.artifact_dir / 'summary.md'}"
+    )
 
 
 @app.command()
@@ -203,7 +264,14 @@ def research(ctx: typer.Context, query: str, model: bool = typer.Option(False, "
     if model:
         runtime = _ctx(ctx)
         provider = build_provider(runtime.settings)
-        resp = provider.complete(ModelRequest(prompt=build_model_prompt(query, {"hits": [h.model_dump() for h in hits]}), model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds))
+        resp = provider.complete(
+            ModelRequest(
+                prompt=build_model_prompt(query, {"hits": [h.model_dump() for h in hits]}),
+                model=runtime.settings.model.model,
+                provider=runtime.settings.model.provider,
+                timeout_seconds=runtime.settings.model.timeout_seconds,
+            )
+        )
         console.print("\nModel synthesis:\n" + resp.text)
 
 
@@ -228,8 +296,17 @@ def plan(ctx: typer.Context, goal: str, model: bool = typer.Option(False, "--mod
     out.write_text(p.model_dump_json(indent=2), encoding="utf-8")
     if model:
         provider = build_provider(runtime.settings)
-        resp = provider.complete(ModelRequest(prompt=build_model_prompt(goal, {"deterministic_plan": p.model_dump()}), model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds))
-        (runtime.session.artifact_dir / "model-plan-review.md").write_text(resp.text, encoding="utf-8")
+        resp = provider.complete(
+            ModelRequest(
+                prompt=build_model_prompt(goal, {"deterministic_plan": p.model_dump()}),
+                model=runtime.settings.model.model,
+                provider=runtime.settings.model.provider,
+                timeout_seconds=runtime.settings.model.timeout_seconds,
+            )
+        )
+        (runtime.session.artifact_dir / "model-plan-review.md").write_text(
+            resp.text, encoding="utf-8"
+        )
     console.print(str(out))
 
 
@@ -239,17 +316,46 @@ def apply(plan_file: Path) -> None:
         raise typer.BadParameter("plan file missing")
     Plan.model_validate_json(plan_file.read_text(encoding="utf-8"))
     console.print(
-        "Apply execution is intentionally disabled in this alpha. Plan validation is available; execution will be introduced after safety hardening."
+        (
+            "Apply execution is intentionally disabled in this alpha. Plan validation is available; "
+            "execution will be introduced after safety hardening."
+        )
     )
 
 
 @app.command()
-def ask(ctx: typer.Context, question: str) -> None:
+def ask(
+    ctx: typer.Context,
+    question: str,
+    context: str = typer.Option("standard", "--context"),
+    full_context: bool = typer.Option(False, "--full-context"),
+    raw: bool = typer.Option(False, "--raw"),
+) -> None:
     runtime = _ctx(ctx)
     provider = build_provider(runtime.settings)
-    prompt = build_model_prompt(question, {"host": platform.platform(), "mode": runtime.session.mode})
-    resp = provider.complete(ModelRequest(prompt=prompt, model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds))
+    ctx_mode = "full" if full_context else context
+    prompt = build_contextual_prompt(
+        question,
+        {
+            "host": platform.platform(),
+            "mode": runtime.session.mode,
+            "identity": "CLI-first Linux ops harness with read-only safety boundaries.",
+        },
+        mode=ctx_mode,
+    )
+    resp = provider.complete(
+        ModelRequest(
+            prompt=prompt,
+            model=runtime.settings.model.model,
+            provider=runtime.settings.model.provider,
+            timeout_seconds=runtime.settings.model.timeout_seconds,
+            metadata={"raw": raw},
+        )
+    )
     if not resp.ok:
         console.print("Model unavailable. Install Codex CLI and login with: codex login")
         raise typer.Exit(code=1)
     console.print(resp.text)
+    console.print(f"\nProvider: {resp.provider}\nModel: {resp.model}\n{_usage_line(resp)}")
+    if raw and resp.raw and resp.raw.get("stdout_jsonl"):
+        console.print(resp.raw["stdout_jsonl"])

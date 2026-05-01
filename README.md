@@ -31,3 +31,6 @@ Examples:
 
 ShellForgeAI does not read or manage ChatGPT credentials; authentication is handled by Codex CLI.
 Model-backed analysis is advisory only. `apply` remains validation-only.
+
+
+- Container smoke test: `docs/container-smoke-test.md`

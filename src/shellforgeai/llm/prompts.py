@@ -19,7 +19,7 @@ def redact_text(value: str) -> str:
     return "\n".join(out)
 
 
-def build_model_prompt(question: str, context: dict, max_chars: int = 6000) -> str:
+def build_model_prompt(question: str, context: dict, max_chars: int = 2000) -> str:
     payload = redact_text(json.dumps(context, indent=2, ensure_ascii=False))
     payload = payload[:max_chars]
     return (
@@ -28,3 +28,8 @@ def build_model_prompt(question: str, context: dict, max_chars: int = 6000) -> s
         f"Question: {question}\n"
         f"Context:\n{payload}"
     )
+
+
+def build_contextual_prompt(question: str, context: dict, mode: str = "standard") -> str:
+    max_chars = 1200 if mode == "minimal" else 3000 if mode == "standard" else 6000
+    return build_model_prompt(question, context, max_chars=max_chars)

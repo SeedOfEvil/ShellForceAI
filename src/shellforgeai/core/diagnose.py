@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -29,7 +29,7 @@ class DiagnosisResult(BaseModel):
     session_id: str
     target: str
     target_type: TargetType
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     evidence: EvidenceBundle
     findings: list[Finding]
     proposed_plan: Plan
@@ -89,23 +89,76 @@ def diagnose_target(
                     confidence="medium",
                 )
             )
-    steps = [
-        PlanStep(
-            step_id="1",
-            title="Review collected evidence",
-            description="Inspect host/service signals and prioritize likely root cause.",
-        ),
-        PlanStep(
-            step_id="2",
-            title="Validate configuration manually",
-            description="Check target-specific config files and syntax before any change.",
-        ),
-        PlanStep(
-            step_id="3",
-            title="Prepare operator-approved remediation",
-            description="Document exact change/reload steps for explicit approval in later phase.",
-        ),
-    ]
+    if ttype == TargetType.disk:
+        steps = [
+            PlanStep(
+                step_id="1",
+                title="Review disk usage evidence",
+                description="Review filesystem capacity from df output.",
+            ),
+            PlanStep(
+                step_id="2",
+                title="Check inode usage",
+                description="Confirm inode pressure from inode evidence.",
+            ),
+            PlanStep(
+                step_id="3",
+                title="Check mount layout",
+                description="Review mount points and identify heavy paths for future read-only du collection.",
+            ),
+        ]
+    elif ttype == TargetType.network:
+        steps = [
+            PlanStep(
+                step_id="1", title="Review routes", description="Validate routing table evidence."
+            ),
+            PlanStep(
+                step_id="2",
+                title="Review DNS config",
+                description="Check resolver configuration and name resolution risks.",
+            ),
+            PlanStep(
+                step_id="3",
+                title="Review listeners",
+                description="Determine whether issue maps to DNS, routing, local listener, or external path.",
+            ),
+        ]
+    elif ttype == TargetType.service:
+        steps = [
+            PlanStep(
+                step_id="1",
+                title="Check service manager availability",
+                description="Confirm systemd/journalctl availability and note container fallback mode.",
+            ),
+            PlanStep(
+                step_id="2",
+                title="Check process and listeners",
+                description="Verify process existence and expected ports.",
+            ),
+            PlanStep(
+                step_id="3",
+                title="Check config and logs",
+                description="Inspect known config/log paths with read-only checks.",
+            ),
+        ]
+    else:
+        steps = [
+            PlanStep(
+                step_id="1",
+                title="Review collected evidence",
+                description="Inspect host/service signals and prioritize likely root cause.",
+            ),
+            PlanStep(
+                step_id="2",
+                title="Validate configuration manually",
+                description="Check target-specific config files and syntax before any change.",
+            ),
+            PlanStep(
+                step_id="3",
+                title="Prepare operator-approved remediation",
+                description="Document exact change/reload steps for explicit approval in later phase.",
+            ),
+        ]
     plan = Plan(
         plan_id=f"plan_{uuid4().hex[:8]}",
         goal=f"Diagnose {target}",
