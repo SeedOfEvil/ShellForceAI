@@ -137,12 +137,17 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
                 f"mode={runtime.session.mode}"
             )
             continue
+        if routed.name == "/model":
+            info = build_provider(runtime.settings).doctor()
+            for k, v in info.items():
+                console.print(f"{k}={v}")
+            continue
         if routed.name == "/profile":
             p = runtime.profile
             console.print(
                 f"Profile: {p.name}\n"
                 f"Online allowed: {p.online_allowed}\n"
-                f"Raw shell allowed: {p.raw_shell_allowed}\n"
+                f"Raw shell allowed: {getattr(p, 'allow_shell_raw', False)}\n"
                 f"Mode: {runtime.session.mode}\n"
                 "Apply: validation-only"
             )
@@ -160,6 +165,18 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
                 "No audit sessions found."
                 if not sessions
                 else "Recent audit sessions:\n" + "\n".join(sessions[:10])
+            )
+            continue
+        if routed.name == "/workspace":
+            trusted_now = WorkspaceTrustStore(runtime.session.data_dir).is_trusted(Path.cwd())
+            console.print(
+                f"Workspace: {Path.cwd()}\n"
+                f"Trusted: {'yes' if trusted_now else 'no'}\n"
+                f"Data dir: {runtime.session.data_dir}\n"
+                f"Artifacts dir: {runtime.session.data_dir / 'artifacts'}\n"
+                f"Sessions dir: {runtime.session.data_dir / 'sessions'}\n"
+                f"Mode/Profile: {runtime.session.mode}/{runtime.profile.name}\n"
+                "Safety: workspace trust allows bounded read context only."
             )
             continue
         if routed.name == "/tools":
@@ -266,6 +283,11 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
                 f"Steps: {len(p.steps)}\nPlan: {pp}\n"
                 "Apply: validation-only in this alpha"
             )
+            continue
+
+        if user_input.startswith("/"):
+            console.print(f"Unknown command: {routed.name}")
+            console.print("Type /help for available commands.")
             continue
 
         provider = build_provider(runtime.settings)

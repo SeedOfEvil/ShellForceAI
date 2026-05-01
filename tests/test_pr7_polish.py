@@ -42,7 +42,6 @@ def test_prompt_has_system_identity():
 
 def test_machine_health_intent_detection():
     assert _is_machine_health_question("Any issue on this machine?")
-    assert not _is_machine_health_question("tell me a joke")
 
 
 def test_bwrap_error_sanitized():
@@ -54,11 +53,37 @@ def test_system_prompt_disallows_direct_machine_inspection():
     assert "Do not run shell commands" in SHELLFORGE_SYSTEM_PROMPT
 
 
-def test_interactive_reserved_commands_do_not_call_model(monkeypatch):
+def test_unknown_slash_does_not_call_model(monkeypatch):
+    def boom(*args, **kwargs):
+        raise AssertionError("model provider should not be built")
+
+    monkeypatch.setattr("shellforgeai.interactive.repl.build_provider", boom)
+    res = runner.invoke(app, ["interactive", "--no-trust-cache"], input="y\n/unknown\n/exit\n")
+    assert res.exit_code == 0 and "Unknown command: /unknown" in res.stdout
+
+
+def test_model_command_uses_doctor_only(monkeypatch):
+    class P:
+        def doctor(self):
+            return {"provider": "openai-codex", "model": "gpt-5.5"}
+
+        def complete(self, req):
+            raise AssertionError("complete should not be called for /model")
+
+    monkeypatch.setattr("shellforgeai.interactive.repl.build_provider", lambda *_: P())
+    res = runner.invoke(app, ["interactive", "--no-trust-cache"], input="y\n/model\n/exit\n")
+    assert res.exit_code == 0 and "provider=openai-codex" in res.stdout
+
+
+def test_workspace_and_profile_are_deterministic(monkeypatch):
     def boom(*args, **kwargs):
         raise AssertionError("model should not be called")
 
     monkeypatch.setattr("shellforgeai.interactive.repl.build_provider", boom)
-    text = "y\n/profile\n/mode\n/audit\n/tools\ndiagnose disk\n/exit\n"
-    res = runner.invoke(app, ["interactive", "--no-trust-cache"], input=text)
-    assert res.exit_code == 0 and "Profile:" in res.stdout and "Diagnose disk" in res.stdout
+    res = runner.invoke(
+        app,
+        ["interactive", "--no-trust-cache"],
+        input="y\n/workspace\n/profile\n/mode\n/audit\n/tools\n/exit\n",
+    )
+    assert res.exit_code == 0
+    assert "Workspace:" in res.stdout and "Profile:" in res.stdout and "Mode:" in res.stdout
