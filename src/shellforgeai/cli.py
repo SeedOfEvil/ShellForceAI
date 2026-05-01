@@ -20,10 +20,11 @@ from shellforgeai.knowledge.search import search_local
 from shellforgeai.llm.manager import build_provider
 from shellforgeai.llm.prompts import build_contextual_prompt, build_model_prompt
 from shellforgeai.llm.schemas import ModelRequest
+from shellforgeai.interactive import run_interactive
 from shellforgeai.tools import host, journal, registry, systemd
 from shellforgeai.version import __version__
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer(no_args_is_help=False)
 inspect_app = typer.Typer()
 tools_app = typer.Typer()
 audit_app = typer.Typer()
@@ -65,6 +66,9 @@ def main(
     ctx.obj = {
         "runtime": RuntimeContext(settings=settings, profile=prof, session=session, verbose=verbose)
     }
+    if ctx.invoked_subcommand is None:
+        run_interactive(ctx.obj["runtime"], console)
+        raise typer.Exit()
 
 
 @app.command()

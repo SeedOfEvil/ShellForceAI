@@ -64,3 +64,13 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 ```
+
+## Interactive check
+
+Validate interactive startup in container:
+
+```bash
+shellforgeai
+/help
+/exit
+```

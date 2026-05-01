@@ -34,3 +34,21 @@ Model-backed analysis is advisory only. `apply` remains validation-only.
 
 
 - Container smoke test: `docs/container-smoke-test.md`
+
+## Interactive mode
+
+Run `shellforgeai` with no subcommand to launch the interactive operator console.
+
+Example session:
+
+```bash
+shellforgeai
+/help
+diagnose disk
+ask what can you see about this machine?
+research nginx address already in use
+plan investigate high disk usage
+/exit
+```
+
+Interactive mode asks for workspace trust before reading local workspace docs, keeps apply validation-only, and never enables destructive execution.
