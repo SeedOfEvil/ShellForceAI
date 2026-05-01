@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+from shellforgeai.llm.schemas import ModelRequest, ModelResponse
+
+
+class CodexProvider:
+    name = "openai-codex"
+
+    def __init__(
+        self,
+        binary: str = "codex",
+        default_model: str = "gpt-5.5",
+        fallback_model: str = "gpt-5.4",
+        timeout_seconds: int = 180,
+        sandbox: str = "read-only",
+        use_json: bool = True,
+        skip_git_repo_check: bool = True,
+        allow_fallback: bool = True,
+    ) -> None:
+        self.binary = binary
+        self.default_model = default_model
+        self.fallback_model = fallback_model
+        self.timeout_seconds = timeout_seconds
+        self.sandbox = sandbox
+        self.use_json = use_json
+        self.skip_git_repo_check = skip_git_repo_check
+        self.allow_fallback = allow_fallback
+
+    def available(self) -> tuple[bool, str]:
+        if shutil.which(self.binary) is None:
+            return False, "codex CLI not found on PATH"
+        return True, "ok"
+
+    def doctor(self) -> dict[str, str | bool]:
+        found = shutil.which(self.binary)
+        auth_cache = Path.home() / ".codex" / "auth.json"
+        version = "unknown"
+        if found:
+            try:
+                r = subprocess.run([self.binary, "--version"], capture_output=True, text=True, timeout=10)
+                version = (r.stdout or r.stderr).strip() or "unknown"
+            except Exception:
+                version = "unknown"
+        return {
+            "provider": self.name,
+            "model": self.default_model,
+            "fallback_model": self.fallback_model,
+            "codex_binary": found or self.binary,
+            "codex_found": bool(found),
+            "codex_version": version,
+            "auth_cache_present": auth_cache.exists(),
+            "sandbox": self.sandbox,
+            "timeout_seconds": str(self.timeout_seconds),
+            "fallback_enabled": self.allow_fallback,
+        }
+
+    def _run(self, prompt: str, model: str, timeout: int) -> tuple[int, str, str]:
+        cmd = [self.binary, "exec", "-m", model, "--sandbox", self.sandbox]
+        if self.use_json:
+            cmd.append("--json")
+        if self.skip_git_repo_check:
+            cmd.append("--skip-git-repo-check")
+        cmd.append(prompt)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        started = time.monotonic()
+        warnings: list[str] = []
+        try:
+            rc, out, err = self._run(request.prompt, request.model or self.default_model, request.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            return ModelResponse(provider=self.name, model=request.model, text="", ok=False, error="timeout", duration_ms=int((time.monotonic()-started)*1000))
+
+        model_used = request.model or self.default_model
+        if rc != 0 and self.allow_fallback and self.fallback_model and model_used != self.fallback_model and "model" in (err + out).lower():
+            rc, out, err = self._run(request.prompt, self.fallback_model, request.timeout_seconds)
+            model_used = self.fallback_model
+            warnings.append(f"{request.model or self.default_model} was unavailable through Codex; retried with fallback model {self.fallback_model}.")
+
+        text = (out or err).strip()
+        structured = None
+        if self.use_json and out.strip():
+            try:
+                last = None
+                for line in out.splitlines():
+                    obj = json.loads(line)
+                    if isinstance(obj, dict) and obj.get("type") in {"final", "message"}:
+                        last = obj
+                if last and isinstance(last.get("content"), str):
+                    text = last["content"]
+                    structured = last
+            except Exception:
+                pass
+
+        return ModelResponse(provider=self.name, model=model_used, text=text, structured=structured, raw={"stderr": err}, ok=rc == 0, error=None if rc == 0 else f"codex exit {rc}", duration_ms=int((time.monotonic()-started)*1000), warnings=warnings)
