@@ -64,3 +64,7 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 ```
+
+## Interactive smoke
+
+Run `shellforgeai`, then `/doctor`, `/model`, `/tools`, `diagnose disk`, and `/exit`.
