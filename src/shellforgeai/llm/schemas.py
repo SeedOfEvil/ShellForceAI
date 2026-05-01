@@ -27,8 +27,9 @@ class ModelResponse(BaseModel):
     ok: bool = True
     error: str | None = None
     duration_ms: int = 0
-    usage: dict[str, Any] | None = None
+    usage: dict[str, int | None] | None = None
     warnings: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class LikelyCause(BaseModel):

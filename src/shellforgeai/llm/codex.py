@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 import time
 from pathlib import Path
 
+from shellforgeai.llm.codex_events import parse_codex_jsonl
 from shellforgeai.llm.schemas import ModelRequest, ModelResponse
 
 
@@ -43,7 +43,9 @@ class CodexProvider:
         version = "unknown"
         if found:
             try:
-                r = subprocess.run([self.binary, "--version"], capture_output=True, text=True, timeout=10)
+                r = subprocess.run(
+                    [self.binary, "--version"], capture_output=True, text=True, timeout=10
+                )
                 version = (r.stdout or r.stderr).strip() or "unknown"
             except Exception:
                 version = "unknown"
@@ -74,29 +76,60 @@ class CodexProvider:
         started = time.monotonic()
         warnings: list[str] = []
         try:
-            rc, out, err = self._run(request.prompt, request.model or self.default_model, request.timeout_seconds)
+            rc, out, err = self._run(
+                request.prompt, request.model or self.default_model, request.timeout_seconds
+            )
         except subprocess.TimeoutExpired:
-            return ModelResponse(provider=self.name, model=request.model, text="", ok=False, error="timeout", duration_ms=int((time.monotonic()-started)*1000))
+            return ModelResponse(
+                provider=self.name,
+                model=request.model,
+                text="",
+                ok=False,
+                error="timeout",
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
 
         model_used = request.model or self.default_model
-        if rc != 0 and self.allow_fallback and self.fallback_model and model_used != self.fallback_model and "model" in (err + out).lower():
+        if (
+            rc != 0
+            and self.allow_fallback
+            and self.fallback_model
+            and model_used != self.fallback_model
+            and "model" in (err + out).lower()
+        ):
             rc, out, err = self._run(request.prompt, self.fallback_model, request.timeout_seconds)
             model_used = self.fallback_model
-            warnings.append(f"{request.model or self.default_model} was unavailable through Codex; retried with fallback model {self.fallback_model}.")
+            warnings.append(
+                f"{request.model or self.default_model} was unavailable through Codex; retried with fallback model {self.fallback_model}."
+            )
 
         text = (out or err).strip()
-        structured = None
+        usage: dict[str, int | None] | None = None
+        metadata: dict[str, str] = {}
         if self.use_json and out.strip():
-            try:
-                last = None
-                for line in out.splitlines():
-                    obj = json.loads(line)
-                    if isinstance(obj, dict) and obj.get("type") in {"final", "message"}:
-                        last = obj
-                if last and isinstance(last.get("content"), str):
-                    text = last["content"]
-                    structured = last
-            except Exception:
-                pass
-
-        return ModelResponse(provider=self.name, model=model_used, text=text, structured=structured, raw={"stderr": err}, ok=rc == 0, error=None if rc == 0 else f"codex exit {rc}", duration_ms=int((time.monotonic()-started)*1000), warnings=warnings)
+            parsed = parse_codex_jsonl(out, keep_raw=bool(request.metadata.get("raw")))
+            warnings.extend(parsed.warnings)
+            if parsed.final_text:
+                text = parsed.final_text
+            usage = {
+                "input_tokens": parsed.usage.input_tokens,
+                "cached_input_tokens": parsed.usage.cached_input_tokens,
+                "output_tokens": parsed.usage.output_tokens,
+                "reasoning_output_tokens": parsed.usage.reasoning_output_tokens,
+            }
+            if parsed.thread_id:
+                metadata["thread_id"] = parsed.thread_id
+        return ModelResponse(
+            provider=self.name,
+            model=model_used,
+            text=text,
+            raw={"stderr": err, "stdout_jsonl": out}
+            if request.metadata.get("raw")
+            else {"stderr": err},
+            ok=rc == 0,
+            error=None if rc == 0 else f"codex exit {rc}",
+            duration_ms=int((time.monotonic() - started) * 1000),
+            usage=usage,
+            warnings=warnings,
+            metadata=metadata,
+        )

@@ -56,10 +56,22 @@ def load_settings(config_path: Path | None = None) -> Settings:
         data.update(yaml.safe_load(config_path.read_text()))
     data["app"]["data_dir"] = os.getenv("SHELLFORGEAI_DATA_DIR", data["app"]["data_dir"])
     data.setdefault("model", {})
-    data["model"]["provider"] = os.getenv("SHELLFORGEAI_MODEL_PROVIDER", data["model"].get("provider", "openai-codex"))
-    data["model"]["model"] = os.getenv("SHELLFORGEAI_MODEL_NAME", data["model"].get("model", "gpt-5.5"))
-    data["model"]["fallback_model"] = os.getenv("SHELLFORGEAI_MODEL_FALLBACK", data["model"].get("fallback_model", "gpt-5.4"))
-    data["model"]["codex_binary"] = os.getenv("SHELLFORGEAI_CODEX_BINARY", data["model"].get("codex_binary", "codex"))
-    data["model"]["timeout_seconds"] = int(os.getenv("SHELLFORGEAI_CODEX_TIMEOUT_SECONDS", data["model"].get("timeout_seconds", 180)))
-    data["model"]["codex_skip_git_repo_check"] = os.getenv("SHELLFORGEAI_CODEX_SKIP_GIT_REPO_CHECK", "1") not in {"0","false","False"}
+    data["model"]["provider"] = os.getenv(
+        "SHELLFORGEAI_MODEL_PROVIDER", data["model"].get("provider", "openai-codex")
+    )
+    data["model"]["model"] = os.getenv(
+        "SHELLFORGEAI_MODEL_NAME", data["model"].get("model", "gpt-5.5")
+    )
+    data["model"]["fallback_model"] = os.getenv(
+        "SHELLFORGEAI_MODEL_FALLBACK", data["model"].get("fallback_model", "gpt-5.4")
+    )
+    data["model"]["codex_binary"] = os.getenv(
+        "SHELLFORGEAI_CODEX_BINARY", data["model"].get("codex_binary", "codex")
+    )
+    data["model"]["timeout_seconds"] = int(
+        os.getenv("SHELLFORGEAI_CODEX_TIMEOUT_SECONDS", data["model"].get("timeout_seconds", 180))
+    )
+    data["model"]["codex_skip_git_repo_check"] = os.getenv(
+        "SHELLFORGEAI_CODEX_SKIP_GIT_REPO_CHECK", "1"
+    ) not in {"0", "false", "False"}
     return Settings.model_validate(data)

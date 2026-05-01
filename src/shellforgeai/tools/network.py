@@ -59,3 +59,19 @@ def connect_test_readonly(target: str, port: int = 443, timeout_seconds: int = 3
         return ToolResult(
             tool="network.connect_test_readonly", ok=False, exit_code=1, stderr=str(exc)
         )
+
+
+def listeners_filtered(pattern: str) -> ToolResult:
+    base = listeners()
+    if not base.ok:
+        return ToolResult(
+            tool="network.listeners.filtered",
+            command=base.command,
+            ok=False,
+            exit_code=base.exit_code,
+            stderr=base.stderr,
+        )
+    lines = [ln for ln in base.stdout.splitlines() if pattern.lower() in ln.lower()]
+    return ToolResult(
+        tool="network.listeners.filtered", command=base.command, stdout="\n".join(lines), ok=True
+    )

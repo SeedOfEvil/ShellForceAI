@@ -22,3 +22,10 @@ Env overrides:
 - `SHELLFORGEAI_CODEX_BINARY`
 - `SHELLFORGEAI_CODEX_TIMEOUT_SECONDS`
 - `SHELLFORGEAI_CODEX_SKIP_GIT_REPO_CHECK`
+
+
+## OpenAI Codex CLI notes
+- Codex CLI must be installed separately (or baked into image).
+- Use `codex login --device-auth` for headless containers.
+- ShellForgeAI does not manage auth and does not parse `~/.codex/auth.json`.
+- ShellForgeAI invokes local Codex subprocess in read-only sandbox mode.

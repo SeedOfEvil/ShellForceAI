@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from shellforgeai.core.evidence import EvidenceCategory, EvidenceItem
 from shellforgeai.knowledge.search import search_local
-from shellforgeai.tools import disk, host, journal, network, systemd
+from shellforgeai.tools import disk, files, host, journal, network, process, systemd
 from shellforgeai.util.text import truncate_text
 
 
@@ -30,7 +30,7 @@ def collect_host_evidence(context) -> list[EvidenceItem]:
 
 
 def collect_service_evidence(context, service_name: str, since: str = "30m") -> list[EvidenceItem]:
-    return [
+    items = [
         _to_item(
             systemd.status(service_name), EvidenceCategory.service, f"systemd status {service_name}"
         ),
@@ -41,6 +41,43 @@ def collect_service_evidence(context, service_name: str, since: str = "30m") -> 
         ),
         _to_item(systemd.list_failed(), EvidenceCategory.service, "Failed systemd units"),
     ]
+    if not items[0].ok:
+        items.append(
+            _to_item(
+                host.command_exists(service_name),
+                EvidenceCategory.service,
+                f"command exists {service_name}",
+            )
+        )
+        items.append(
+            _to_item(
+                process.find(service_name), EvidenceCategory.service, f"process find {service_name}"
+            )
+        )
+        if service_name.lower() == "nginx":
+            items.append(
+                _to_item(
+                    network.listeners_filtered(":80"),
+                    EvidenceCategory.network,
+                    "nginx likely listener 80",
+                )
+            )
+            items.append(
+                _to_item(
+                    network.listeners_filtered(":443"),
+                    EvidenceCategory.network,
+                    "nginx likely listener 443",
+                )
+            )
+            items.append(
+                _to_item(
+                    files.stat("/etc/nginx/nginx.conf"), EvidenceCategory.files, "nginx config path"
+                )
+            )
+            items.append(
+                _to_item(files.stat("/var/log/nginx"), EvidenceCategory.files, "nginx log dir")
+            )
+    return items
 
 
 def collect_disk_evidence(context) -> list[EvidenceItem]:
