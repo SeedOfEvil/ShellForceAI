@@ -17,6 +17,9 @@ from shellforgeai.core.plans import Plan, PlanStep
 from shellforgeai.core.profiles import load_profile
 from shellforgeai.core.session import build_session_context
 from shellforgeai.knowledge.search import search_local
+from shellforgeai.llm.manager import build_provider
+from shellforgeai.llm.prompts import build_model_prompt
+from shellforgeai.llm.schemas import ModelRequest
 from shellforgeai.tools import host, journal, registry, systemd
 from shellforgeai.version import __version__
 
@@ -24,9 +27,11 @@ app = typer.Typer(no_args_is_help=True)
 inspect_app = typer.Typer()
 tools_app = typer.Typer()
 audit_app = typer.Typer()
+model_app = typer.Typer()
 app.add_typer(inspect_app, name="inspect")
 app.add_typer(tools_app, name="tools")
 app.add_typer(audit_app, name="audit")
+app.add_typer(model_app, name="model")
 console = Console()
 
 
@@ -69,6 +74,26 @@ def doctor(ctx: typer.Context) -> None:
     )
 
 
+
+
+@model_app.command("doctor")
+def model_doctor(ctx: typer.Context) -> None:
+    runtime = _ctx(ctx)
+    provider = build_provider(runtime.settings)
+    info = provider.doctor()
+    for k, v in info.items():
+        console.print(f"{k}={v}")
+    if not info.get("auth_cache_present"):
+        console.print("Suggested login: codex login (or codex login --device-auth)")
+
+
+@model_app.command("test")
+def model_test(ctx: typer.Context, prompt: str = "say hello") -> None:
+    runtime = _ctx(ctx)
+    provider = build_provider(runtime.settings)
+    req = ModelRequest(prompt=prompt, model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds)
+    resp = provider.complete(req)
+    console.print(resp.text)
 @inspect_app.command("host")
 def inspect_host() -> None:
     for r in [host.host_info(), host.host_resources(), host.host_uptime()]:
@@ -132,6 +157,7 @@ def diagnose(
     since: str = "30m",
     json_output: bool = typer.Option(False, "--json"),
     save_plan: bool = False,
+    model: bool = typer.Option(False, "--model"),
 ) -> None:
     runtime = _ctx(ctx)
     result = diagnose_target(runtime, target, online=online, since=since)
@@ -154,15 +180,17 @@ def diagnose(
         "summary": f"diagnosed {target}",
     }
     audit.append(rec)
-    console.print(
-        result.model_dump_json(indent=2)
-        if json_output
-        else f"session={result.session_id} target={target} type={result.target_type}"
-    )
+    if model:
+        provider = build_provider(runtime.settings)
+        prompt = build_model_prompt(f"Diagnose {target}", {"findings": [f.model_dump() for f in result.findings], "evidence": [i.model_dump() for i in result.evidence.items]})
+        mresp = provider.complete(ModelRequest(prompt=prompt, model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds))
+        (runtime.session.artifact_dir / "model-response.md").write_text(mresp.text, encoding="utf-8")
+        console.print("Model-assisted analysis:\n" + mresp.text)
+    console.print(result.model_dump_json(indent=2) if json_output else f"session={result.session_id} target={target} type={result.target_type}")
 
 
 @app.command()
-def research(ctx: typer.Context, query: str) -> None:
+def research(ctx: typer.Context, query: str, model: bool = typer.Option(False, "--model")) -> None:
     runtime = _ctx(ctx)
     hits = search_local(
         runtime.settings.knowledge.local_paths + [str(Path.cwd() / "SHELLFORGE.md")], query
@@ -172,10 +200,15 @@ def research(ctx: typer.Context, query: str) -> None:
         return
     for h in hits:
         console.print(f"{h.path}:{h.line} {h.snippet}")
+    if model:
+        runtime = _ctx(ctx)
+        provider = build_provider(runtime.settings)
+        resp = provider.complete(ModelRequest(prompt=build_model_prompt(query, {"hits": [h.model_dump() for h in hits]}), model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds))
+        console.print("\nModel synthesis:\n" + resp.text)
 
 
 @app.command()
-def plan(ctx: typer.Context, goal: str) -> None:
+def plan(ctx: typer.Context, goal: str, model: bool = typer.Option(False, "--model")) -> None:
     runtime = _ctx(ctx)
     t = classify_target(goal).value
     p = Plan(
@@ -193,6 +226,10 @@ def plan(ctx: typer.Context, goal: str) -> None:
     )
     out = runtime.session.artifact_dir / "plan.json"
     out.write_text(p.model_dump_json(indent=2), encoding="utf-8")
+    if model:
+        provider = build_provider(runtime.settings)
+        resp = provider.complete(ModelRequest(prompt=build_model_prompt(goal, {"deterministic_plan": p.model_dump()}), model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds))
+        (runtime.session.artifact_dir / "model-plan-review.md").write_text(resp.text, encoding="utf-8")
     console.print(str(out))
 
 
@@ -204,3 +241,15 @@ def apply(plan_file: Path) -> None:
     console.print(
         "Apply execution is intentionally disabled in this alpha. Plan validation is available; execution will be introduced after safety hardening."
     )
+
+
+@app.command()
+def ask(ctx: typer.Context, question: str) -> None:
+    runtime = _ctx(ctx)
+    provider = build_provider(runtime.settings)
+    prompt = build_model_prompt(question, {"host": platform.platform(), "mode": runtime.session.mode})
+    resp = provider.complete(ModelRequest(prompt=prompt, model=runtime.settings.model.model, provider=runtime.settings.model.provider, timeout_seconds=runtime.settings.model.timeout_seconds))
+    if not resp.ok:
+        console.print("Model unavailable. Install Codex CLI and login with: codex login")
+        raise typer.Exit(code=1)
+    console.print(resp.text)
