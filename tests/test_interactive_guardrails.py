@@ -29,7 +29,7 @@ def test_blocked_shell_input_no_model_call(monkeypatch) -> None:
         input="y\nsudo docker exec -it shellforgeai sh\n/help\n/exit\n",
     )
     assert res.exit_code == 0
-    assert "This looks like a shell command pasted" in res.stdout
+    assert "ShellForgeAI interactive mode does not execute shell snippets." in res.stdout
     assert "Session:" in res.stdout
 
 

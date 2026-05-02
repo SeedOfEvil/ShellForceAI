@@ -66,7 +66,7 @@ def container_detect() -> ToolResult:
 
 
 def kernel_messages_tail() -> ToolResult:
-    r = run_command(["dmesg", "-T", "--level=err,warn"], timeout_seconds=5)
+    r = run_command(["dmesg", "-T", "--level=err,warn"], timeout=5)
     ok = r.exit_code == 0
     return ToolResult(
         tool="system.kernel_messages_tail",
