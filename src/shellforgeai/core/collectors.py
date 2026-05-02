@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from shellforgeai.core.evidence import EvidenceCategory, EvidenceItem
 from shellforgeai.knowledge.search import search_local
-from shellforgeai.tools import disk, files, host, journal, network, process, systemd
+from shellforgeai.tools import disk, files, host, journal, network, process, systemd, system, logs
+from shellforgeai.tools.services import docker_detect, nginx_detect, ssh_detect
 from shellforgeai.util.text import truncate_text
 
 
@@ -107,3 +108,29 @@ def collect_local_knowledge_evidence(context, query: str) -> list[EvidenceItem]:
             content=text,
         )
     ]
+
+
+def collect_health_evidence(context) -> list[EvidenceItem]:
+    return (
+        [
+            _to_item(system.os_release(), EvidenceCategory.host, "OS release"),
+            _to_item(system.cpu_memory(), EvidenceCategory.host, "CPU/memory"),
+            _to_item(system.container_detect(), EvidenceCategory.host, "Container detection"),
+        ]
+        + collect_host_evidence(context)
+        + collect_disk_evidence(context)
+        + collect_network_evidence(context)
+        + [_to_item(process.top(), EvidenceCategory.host, "Top processes")]
+    )
+
+
+def collect_nginx_evidence(context) -> list[EvidenceItem]:
+    return [_to_item(r, EvidenceCategory.service, "nginx collector") for r in nginx_detect()]
+
+
+def collect_ssh_evidence(context) -> list[EvidenceItem]:
+    return [_to_item(r, EvidenceCategory.service, "ssh collector") for r in ssh_detect()]
+
+
+def collect_docker_evidence(context) -> list[EvidenceItem]:
+    return [_to_item(r, EvidenceCategory.service, "docker collector") for r in docker_detect()]

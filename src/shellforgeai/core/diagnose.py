@@ -11,6 +11,10 @@ from shellforgeai.core.collectors import (
     collect_local_knowledge_evidence,
     collect_network_evidence,
     collect_service_evidence,
+    collect_health_evidence,
+    collect_nginx_evidence,
+    collect_ssh_evidence,
+    collect_docker_evidence,
 )
 from shellforgeai.core.evidence import EvidenceBundle, TargetType, classify_target
 from shellforgeai.core.plans import Plan, PlanStep
@@ -47,8 +51,16 @@ def diagnose_target(
     warnings: list[str] = []
     if online and not context.session.online_enabled:
         warnings.append("Online research requested but blocked by active profile/policy.")
-    if ttype == TargetType.service:
+    if target in {"health", "host"}:
+        items.extend(collect_health_evidence(context))
+    elif ttype == TargetType.service:
         items.extend(collect_service_evidence(context, target, since=since))
+        if target.lower() == "nginx":
+            items.extend(collect_nginx_evidence(context))
+        if target.lower() in {"ssh", "sshd"}:
+            items.extend(collect_ssh_evidence(context))
+        if target.lower() == "docker":
+            items.extend(collect_docker_evidence(context))
         items.extend(collect_local_knowledge_evidence(context, target))
     elif ttype == TargetType.disk:
         items.extend(collect_disk_evidence(context))
