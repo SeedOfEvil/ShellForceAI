@@ -53,12 +53,15 @@ When more evidence is needed, request ShellForgeAI collectors by name before raw
                 status = row.get("status") or row.get("metadata", {}).get("status") or "unknown"
                 summary = row.get("summary") or ""
                 lines.append(f"- {tool}: {status} — {summary}".strip())
-        evidence_block = "ShellForgeAI already collected:\n" + "\n".join(lines)
+        evidence_block = "ShellForgeAI already collected evidence:\n" + "\n".join(lines)
     payload = redact_text(json.dumps(context, indent=2, ensure_ascii=False))[:max_chars]
     return (
         f"{SHELLFORGE_SYSTEM_PROMPT}\n\n{capability_map}\n\n"
         f"{evidence_block}\n\n"
-        "Do not ask for checks already attempted unless context changed.\n"
+        "Analyze collected evidence first.\n"
+        "Do not ask operators to rerun collectors already collected unless context changed.\n"
+        "Prefer ShellForgeAI collector names before raw shell commands.\n"
+        "Mutating/service-impacting actions are operator-run and approval-required.\n"
         f"Question: {question}\nContext:\n{payload}"
     )
 

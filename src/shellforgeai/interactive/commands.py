@@ -33,9 +33,44 @@ def route_input(text: str) -> RoutedCommand:
         "high memory",
         "high load",
         "performance issue",
+        "high io",
+        "laggy",
+        "hanging",
+        "system is crawling",
+        "everything is slow",
     ]
     if any(p in lowered for p in perf_intents):
         return RoutedCommand(name="diagnose", args="performance")
+    disk_intents = [
+        "how much disk space do we have left",
+        "disk space left",
+        "free disk space",
+        "are we running out of disk",
+        "is disk full",
+        "disk usage",
+        "storage left",
+        "how full is the disk",
+        "out of space",
+        "inode usage",
+        "are inodes full",
+    ]
+    if any(p in lowered for p in disk_intents):
+        return RoutedCommand(name="diagnose", args="disk")
+    health_intents = [
+        "my system is glitchy",
+        "computer is acting weird",
+        "machine is acting weird",
+        "something is wrong with this machine",
+        "system health",
+        "check this machine",
+        "any issue on this machine",
+        "is this host healthy",
+        "things are unstable",
+        "weird behavior",
+        "glitches",
+    ]
+    if any(p in lowered for p in health_intents):
+        return RoutedCommand(name="diagnose", args="health")
     for prefix, cmd in [
         ("diagnose ", "diagnose"),
         ("research ", "research"),

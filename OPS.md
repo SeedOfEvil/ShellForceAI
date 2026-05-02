@@ -24,3 +24,11 @@ PR7: ShellForgeAI interactive banner now includes rotating quotes; build metadat
 - Note: In restricted containers, Codex may emit bwrap/namespace errors; treat as provider sandbox limitation, not host failure. ShellForgeAI still collects evidence via typed read-only tools.
 \n## Interactive guardrails update\n- Interactive mode is not a shell; shell-looking pasted input is blocked unless explicitly prefixed with ask explain/review.
 - Multiline shell paste recovery uses a short-lived quarantine: subsequent shell fragments are blocked without model calls, while /help and /exit still work.\n- Slash commands are deterministic and unknown slash commands do not call the model.\n- Added /health and /audit latest interactive commands.\n- Apply remains validation-only; workspace trust does not bypass mutation policy.\n- Service-impacting commands must be described as approval-required/operator-run.\n
+
+## Context-first + Codex provider note (PR)
+- ShellForgeAI runtime auto-runs approved typed read-only collectors for recognized ops intents (disk/performance/health/firewall/service).
+- In current architecture, Codex is used as a model/provider for synthesis; ShellForgeAI tools are executed by the ShellForgeAI runtime.
+- Runtime context bundles are the immediate solution; optional MCP exposure of read-only tools is a future path.
+- Arbitrary shell remains blocked in interactive mode.
+- Mutating/service-impacting actions remain blocked or approval-required/operator-run.
+- apply remains validation-only in this alpha.
