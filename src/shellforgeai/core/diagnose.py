@@ -86,6 +86,7 @@ def diagnose_target(
             items.extend(collect_firewall_evidence(context))
         else:
             items.extend(collect_local_knowledge_evidence(context, target))
+    items = _dedupe(items)
     for i in items:
         if not i.ok:
             findings.append(
