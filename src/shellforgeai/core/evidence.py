@@ -50,6 +50,20 @@ class EvidenceBundle(BaseModel):
 
 def classify_target(target: str) -> TargetType:
     t = target.lower().strip()
+    if any(
+        k in t
+        for k in [
+            "slow",
+            "sluggish",
+            "laggy",
+            "high cpu",
+            "high memory",
+            "high load",
+            "performance",
+            "crawling",
+        ]
+    ):
+        return TargetType.host
     if t in {"nginx", "ssh", "sshd", "docker", "cron"} or ".service" in t:
         return TargetType.service
     if any(k in t for k in ["disk", "storage", "filesystem", "space"]):

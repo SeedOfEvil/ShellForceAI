@@ -241,6 +241,20 @@ TOOLS = [
         category="network",
         examples=["diagnose firewall"],
     ),
+    ToolDefinition(
+        name="performance.detect",
+        description="Performance read-only collector bundle",
+        risk=RiskTier.read,
+        category="host",
+        examples=["diagnose performance"],
+    ),
+    ToolDefinition(
+        name="audit.recent",
+        description="Recent ShellForgeAI audit summary context",
+        risk=RiskTier.read,
+        category="audit",
+        examples=["diagnose performance"],
+    ),
 ]
 
 

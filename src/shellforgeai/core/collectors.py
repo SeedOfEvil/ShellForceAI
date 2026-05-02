@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from shellforgeai.core.evidence import EvidenceCategory, EvidenceItem
+from shellforgeai.knowledge.audits import search_recent_audits
 from shellforgeai.knowledge.search import search_local
 from shellforgeai.tools import (
     disk,
@@ -206,6 +207,37 @@ def collect_health_evidence(context) -> list[EvidenceItem]:
         + collect_network_evidence(context)
         + [_to_item(process.top(), EvidenceCategory.host, "Top processes")]
     )
+
+
+def collect_performance_evidence(context) -> list[EvidenceItem]:
+    items = [
+        _to_item(host.host_info(), EvidenceCategory.host, "Host information"),
+        _to_item(host.host_uptime(), EvidenceCategory.host, "Host uptime"),
+        _to_item(host.host_resources(), EvidenceCategory.host, "Host resources"),
+        _to_item(system.os_release(), EvidenceCategory.host, "OS release"),
+        _to_item(system.cpu_memory(), EvidenceCategory.host, "CPU/memory"),
+        _to_item(system.container_detect(), EvidenceCategory.host, "Container detection"),
+        _to_item(disk.usage(), EvidenceCategory.host, "Disk usage"),
+        _to_item(disk.inodes(), EvidenceCategory.host, "Inode usage"),
+        _to_item(process.top(), EvidenceCategory.host, "Top processes"),
+        _to_item(systemd.list_failed(), EvidenceCategory.service, "Failed systemd units"),
+    ]
+    for hit in search_recent_audits(
+        context.session.data_dir, query="disk performance network", limit=5
+    ):
+        items.append(
+            EvidenceItem(
+                source="audit.recent",
+                category=EvidenceCategory.knowledge,
+                title="Recent audit context",
+                summary=f"{hit.get('session_id', 'unknown')}: {hit.get('summary', 'no summary')}"[
+                    :160
+                ],
+                content=str(hit),
+                metadata={"status": "ok"},
+            )
+        )
+    return _dedupe_items(items)
 
 
 def collect_nginx_evidence(context) -> list[EvidenceItem]:
