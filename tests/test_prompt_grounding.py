@@ -21,3 +21,4 @@ def test_model_prompt_includes_capabilities_and_evidence_block() -> None:
     assert "Available ShellForgeAI read-only collectors" in prompt
     assert "ShellForgeAI already collected" in prompt
     assert "command.exists ufw: not_found" in prompt
+    assert "Do not ask for checks already attempted" in prompt

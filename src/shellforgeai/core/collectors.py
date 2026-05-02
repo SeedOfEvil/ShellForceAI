@@ -41,16 +41,33 @@ def _summarize(result) -> str:
         return ", ".join(vals) or (first or "unavailable")
     if result.tool == "network.routes":
         return first or "route summary unavailable"
-    if result.tool == "process.find":
-        target = result.command[-1] if result.command else "process"
-        return f"{target}: found process" if result.ok else f"{target}: no matching daemon process"
+    if result.tool.startswith("process.find"):
+        target = result.tool.split(" ", 1)[1] if " " in result.tool else "process"
+        if result.ok and (result.stdout or "").splitlines():
+            pid = (result.stdout.splitlines()[0].split() or ["?"])[0]
+            return f"found {target} pid={pid}"
+        return f"no matching {target} process"
+    if result.tool == "host.resources":
+        return first.replace("{'loadavg': ", "loadavg=").replace("}", "")
+    if result.tool == "network.listeners":
+        rows = max(0, len((result.stdout or "").splitlines()) - 1)
+        return "no listening sockets" if rows == 0 else f"{rows} listening sockets"
+    if result.tool == "network.listeners.filtered":
+        return first or "no listener"
+    if result.tool == "network.dns" and "nameserver" in (result.stdout or ""):
+        ns = [ln.split()[1] for ln in result.stdout.splitlines() if ln.startswith("nameserver")]
+        return (
+            f"docker resolver {ns[0]}"
+            if ns and ns[0] == "127.0.0.11"
+            else (f"nameservers={','.join(ns)}" if ns else "dns unavailable")
+        )
     return first[:120] if first else ("ok" if result.ok else "unavailable")
 
 
 def _status_for_result(result) -> str:
     if result.tool == "command.exists":
         return "ok" if result.stdout.strip() else "not_found"
-    if result.tool == "process.find":
+    if result.tool.startswith("process.find"):
         return "ok" if result.ok else "not_found"
     if not result.ok and "permission denied" in (result.stderr or "").lower():
         return "denied"

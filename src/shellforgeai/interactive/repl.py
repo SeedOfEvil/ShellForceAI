@@ -51,6 +51,23 @@ def _is_machine_health_question(text: str) -> bool:
     )
 
 
+def _is_firewall_question(text: str) -> bool:
+    t = text.lower()
+    return any(
+        p in t
+        for p in [
+            "firewall on or off",
+            "firewall status",
+            "firewall enabled",
+            "check firewall",
+            "ufw status",
+            "iptables status",
+            "nftables status",
+            "pve firewall",
+        ]
+    )
+
+
 def _sanitize_provider_error(text: str) -> str:
     if "bwrap: No permissions to create a new namespace" in text:
         return (
@@ -478,7 +495,22 @@ No command was executed.""")
             "mode": runtime.session.mode,
             "workspace_trusted": True,
         }
-        if _is_machine_health_question(user_input):
+        if _is_firewall_question(user_input):
+            with console.status("Collecting firewall evidence..."):
+                res = diagnose_target(runtime, "firewall", online=False, since="30m")
+            checks = [
+                {
+                    "tool": i.source,
+                    "status": str(i.metadata.get("status", "ok" if i.ok else "unavailable")),
+                    "summary": i.summary,
+                }
+                for i in res.evidence.items
+            ]
+            console.print(f"Collected {len(checks)} evidence item(s)")
+            _evidence_table(console, checks)
+            context["evidence"] = checks
+            kind = "diagnose"
+        elif _is_machine_health_question(user_input):
             with console.status("Collecting evidence..."):
                 checks = _collect_machine_health()
             console.print(f"Collected {len(checks)} evidence item(s)")
