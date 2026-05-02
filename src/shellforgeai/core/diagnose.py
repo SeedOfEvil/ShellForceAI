@@ -7,10 +7,15 @@ from pydantic import BaseModel, Field
 
 from shellforgeai.core.collectors import (
     collect_disk_evidence,
+    collect_docker_evidence,
+    collect_firewall_evidence,
+    collect_health_evidence,
     collect_host_evidence,
     collect_local_knowledge_evidence,
     collect_network_evidence,
+    collect_nginx_evidence,
     collect_service_evidence,
+    collect_ssh_evidence,
 )
 from shellforgeai.core.evidence import EvidenceBundle, TargetType, classify_target
 from shellforgeai.core.plans import Plan, PlanStep
@@ -38,6 +43,18 @@ class DiagnosisResult(BaseModel):
     audit_path: str | None = None
 
 
+def _dedupe(items):
+    seen = set()
+    out = []
+    for i in items:
+        key = (i.source, i.path or "", " ".join(i.command or []), i.summary)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(i)
+    return out
+
+
 def diagnose_target(
     context, target: str, online: bool = False, since: str = "30m"
 ) -> DiagnosisResult:
@@ -47,15 +64,29 @@ def diagnose_target(
     warnings: list[str] = []
     if online and not context.session.online_enabled:
         warnings.append("Online research requested but blocked by active profile/policy.")
-    if ttype == TargetType.service:
+    if target in {"health", "host"}:
+        items.extend(collect_health_evidence(context))
+    elif ttype == TargetType.service:
         items.extend(collect_service_evidence(context, target, since=since))
+        if target.lower() == "nginx":
+            items.extend(collect_nginx_evidence(context))
+        if target.lower() in {"ssh", "sshd"}:
+            items.extend(collect_ssh_evidence(context))
+        if target.lower() == "docker":
+            items.extend(collect_docker_evidence(context))
         items.extend(collect_local_knowledge_evidence(context, target))
     elif ttype == TargetType.disk:
         items.extend(collect_disk_evidence(context))
     elif ttype == TargetType.network:
         items.extend(collect_network_evidence(context))
+        if "firewall" in target.lower():
+            items.extend(collect_firewall_evidence(context))
     else:
-        items.extend(collect_local_knowledge_evidence(context, target))
+        if "firewall" in target.lower():
+            items.extend(collect_firewall_evidence(context))
+        else:
+            items.extend(collect_local_knowledge_evidence(context, target))
+    items = _dedupe(items)
     for i in items:
         if not i.ok:
             findings.append(
@@ -104,7 +135,10 @@ def diagnose_target(
             PlanStep(
                 step_id="3",
                 title="Check mount layout",
-                description="Review mount points and identify heavy paths for future read-only du collection.",
+                description=(
+                    "Review mount points and identify heavy paths for future "
+                    "read-only du collection."
+                ),
             ),
         ]
     elif ttype == TargetType.network:
@@ -120,7 +154,10 @@ def diagnose_target(
             PlanStep(
                 step_id="3",
                 title="Review listeners",
-                description="Determine whether issue maps to DNS, routing, local listener, or external path.",
+                description=(
+                    "Determine whether issue maps to DNS, routing, local listener, "
+                    "or external path."
+                ),
             ),
         ]
     elif ttype == TargetType.service:
@@ -128,7 +165,9 @@ def diagnose_target(
             PlanStep(
                 step_id="1",
                 title="Check service manager availability",
-                description="Confirm systemd/journalctl availability and note container fallback mode.",
+                description=(
+                    "Confirm systemd/journalctl availability and note container fallback mode."
+                ),
             ),
             PlanStep(
                 step_id="2",
@@ -156,7 +195,9 @@ def diagnose_target(
             PlanStep(
                 step_id="3",
                 title="Prepare operator-approved remediation",
-                description="Document exact change/reload steps for explicit approval in later phase.",
+                description=(
+                    "Document exact change/reload steps for explicit approval in later phase."
+                ),
             ),
         ]
     plan = Plan(

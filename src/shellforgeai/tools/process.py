@@ -21,9 +21,27 @@ def find(name: str) -> ToolResult:
     r = run_command(["ps", "-eo", "pid,comm,args"])
     if r.exit_code != 0:
         return ToolResult(
-            tool="process.find", command=r.command, exit_code=r.exit_code, stderr=r.stderr, ok=False
+            tool=f"process.find {name}",
+            command=r.command,
+            exit_code=r.exit_code,
+            stderr=r.stderr,
+            ok=False,
         )
-    lines = [ln for ln in r.stdout.splitlines() if name.lower() in ln.lower()]
+    needles = [name.lower()]
+    if name.lower() == "docker":
+        needles = ["dockerd", "containerd", "docker-proxy", "rootlesskit"]
+    lines = []
+    for ln in r.stdout.splitlines():
+        low = ln.lower()
+        if "shellforgeai" in low:
+            continue
+        if any(n in low for n in needles):
+            lines.append(ln)
     return ToolResult(
-        tool="process.find", command=r.command, stdout="\n".join(lines[:50]), exit_code=0, ok=True
+        tool=f"process.find {name}",
+        command=r.command,
+        stdout="\n".join(lines[:50]),
+        stderr="not found" if not lines else "",
+        exit_code=0,
+        ok=bool(lines),
     )

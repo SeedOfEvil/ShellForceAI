@@ -100,7 +100,8 @@ class CodexProvider:
             rc, out, err = self._run(request.prompt, self.fallback_model, request.timeout_seconds)
             model_used = self.fallback_model
             warnings.append(
-                f"{request.model or self.default_model} was unavailable through Codex; retried with fallback model {self.fallback_model}."
+                f"{request.model or self.default_model} was unavailable through Codex; "
+                f"retried with fallback model {self.fallback_model}."
             )
 
         text = (out or err).strip()

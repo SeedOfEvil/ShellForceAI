@@ -1,28 +1,124 @@
+from __future__ import annotations
+
+import fnmatch
 from pathlib import Path
 
 from .base import ToolResult
 
+DENY_PATTERNS = [
+    "/etc/shadow",
+    "/etc/gshadow",
+    "/proc/kcore",
+    "*/.codex/auth.json",
+    "~/.codex/auth.json",
+    "*.key",
+    "*.pem",
+    "*id_rsa*",
+    "*id_ed25519*",
+]
+
+
+def _denied(path: str) -> bool:
+    expanded = str(Path(path).expanduser())
+    return any(fnmatch.fnmatch(expanded, p) for p in DENY_PATTERNS)
+
+
+def _redact(text: str) -> str:
+    keys = [
+        "password",
+        "secret",
+        "token",
+        "api_key",
+        "authorization",
+        "private_key",
+        "access_token",
+        "refresh_token",
+    ]
+    out = []
+    for ln in text.splitlines():
+        low = ln.lower()
+        if any(k in low for k in keys):
+            out.append("[REDACTED]")
+        elif ".env" in low and "=" in ln:
+            out.append(ln.split("=")[0] + "=***")
+        else:
+            out.append(ln)
+    return "\n".join(out)
+
+
+def exists(path: str) -> ToolResult:
+    p = Path(path)
+    if _denied(path):
+        return ToolResult(
+            tool="files.exists", ok=False, exit_code=1, stderr="sensitive path denied"
+        )
+    e = p.exists()
+    t = "other"
+    if e:
+        t = (
+            "dir"
+            if p.is_dir()
+            else "file"
+            if p.is_file()
+            else "symlink"
+            if p.is_symlink()
+            else "other"
+        )
+    payload = {
+        "exists": e,
+        "type": t,
+        "readable": (e and p.exists()),
+        "size": p.stat().st_size if e else 0,
+    }
+    return ToolResult(tool="files.exists", stdout=str(payload))
+
+
+def safe_list(path: str, max_entries: int = 200) -> ToolResult:
+    p = Path(path)
+    if not p.is_dir():
+        return ToolResult(tool="files.safe_list", ok=False, exit_code=1, stderr="not a directory")
+    names = sorted([x.name for x in p.iterdir()])[:max_entries]
+    return ToolResult(tool="files.safe_list", stdout="\n".join(names))
+
+
+def head(path: str, lines: int = 40) -> ToolResult:
+    return read_text(path, max_bytes=65536, lines=lines, tail_mode=False)
+
+
+def tail(path: str, lines: int = 100) -> ToolResult:
+    return read_text(path, max_bytes=65536, lines=lines, tail_mode=True)
+
 
 def read(path: str, max_bytes: int = 65536) -> ToolResult:
-    p = Path(path)
-    if not p.exists():
-        return ToolResult(tool="files.read", ok=False, exit_code=1, stderr="missing file")
-    if p.is_dir():
-        return ToolResult(tool="files.read", ok=False, exit_code=1, stderr="path is directory")
-    return ToolResult(tool="files.read", stdout=p.read_text(errors="ignore")[:max_bytes])
+    return read_text(path, max_bytes=max_bytes)
+
+
+def read_text(
+    path: str,
+    max_bytes: int = 65536,
+    redact_secrets: bool = True,
+    lines: int | None = None,
+    tail_mode: bool = False,
+) -> ToolResult:
+    p = Path(path).expanduser()
+    if _denied(str(p)):
+        return ToolResult(
+            tool="files.read_text", ok=False, exit_code=1, stderr="sensitive path denied"
+        )
+    if not p.exists() or p.is_dir():
+        return ToolResult(tool="files.read_text", ok=False, exit_code=1, stderr="invalid path")
+    b = p.read_bytes()[: max_bytes + 1]
+    if b"\x00" in b:
+        return ToolResult(tool="files.read_text", ok=False, exit_code=1, stderr="binary file")
+    text = b.decode(errors="ignore")
+    split = text.splitlines()
+    if lines is not None:
+        split = split[-lines:] if tail_mode else split[:lines]
+    out = "\n".join(split)
+    if redact_secrets:
+        out = _redact(out)
+    return ToolResult(tool="files.read_text", stdout=out)
 
 
 def stat(path: str) -> ToolResult:
-    p = Path(path)
-    e = p.exists()
-    return ToolResult(
-        tool="files.stat",
-        stdout=str(
-            {
-                "path": str(p),
-                "exists": e,
-                "is_file": p.is_file() if e else False,
-                "is_dir": p.is_dir() if e else False,
-            }
-        ),
-    )
+    return exists(path)

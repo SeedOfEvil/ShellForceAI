@@ -44,6 +44,25 @@ def host_uptime() -> ToolResult:
 
 def command_exists(command: str) -> ToolResult:
     r = run_command(["which", command])
+    if r.exit_code == 0:
+        return ToolResult(
+            tool="command.exists",
+            command=r.command,
+            exit_code=0,
+            stdout=r.stdout.strip(),
+            duration_ms=r.duration_ms,
+            ok=True,
+        )
+    if r.exit_code == 127 or "not found" in (r.stderr or "").lower():
+        return ToolResult(
+            tool="command.exists",
+            command=r.command,
+            exit_code=0,
+            stdout="",
+            stderr="not found",
+            duration_ms=r.duration_ms,
+            ok=True,
+        )
     return ToolResult(
         tool="command.exists",
         command=r.command,

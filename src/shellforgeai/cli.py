@@ -21,7 +21,7 @@ from shellforgeai.llm.manager import build_provider
 from shellforgeai.llm.prompts import build_contextual_prompt, build_model_prompt
 from shellforgeai.llm.schemas import ModelRequest
 from shellforgeai.tools import host, journal, registry, systemd
-from shellforgeai.version import __version__, get_build_info
+from shellforgeai.version import get_build_info
 
 app = typer.Typer(
     no_args_is_help=False,
@@ -107,14 +107,25 @@ def doctor(ctx: typer.Context) -> None:
     console.print("ShellForgeAI")
     build = get_build_info()
     console.print(
-        f"version={build.display_version} python={sys.version.split()[0]} platform={platform.system()}"
+        " ".join(
+            [
+                f"version={build.display_version}",
+                f"python={sys.version.split()[0]}",
+                f"platform={platform.system()}",
+            ]
+        )
     )
     if build.build_line():
         console.print(build.build_line())
     console.print(f"profile={runtime.profile.name} mode={runtime.session.mode}")
     console.print(f"data_dir={runtime.session.data_dir} audit_dir={audit.sessions_dir}")
     console.print(
-        f"tools={len(registry.list_tools())} model={runtime.settings.model.provider}/{runtime.settings.model.model}"
+        " ".join(
+            [
+                f"tools={len(registry.list_tools())}",
+                f"model={runtime.settings.model.provider}/{runtime.settings.model.model}",
+            ]
+        )
     )
 
 
@@ -149,7 +160,10 @@ def model_test(
     resp = provider.complete(req)
     console.print(resp.text)
     console.print(
-        f"\nProvider: {resp.provider}\nModel: {resp.model}\nOK: {str(resp.ok).lower()}\n{_usage_line(resp)}"
+        f"\nProvider: {resp.provider}\n"
+        f"Model: {resp.model}\n"
+        f"OK: {str(resp.ok).lower()}\n"
+        f"{_usage_line(resp)}"
     )
     if raw and resp.raw and resp.raw.get("stdout_jsonl"):
         console.print(resp.raw["stdout_jsonl"])
@@ -267,12 +281,19 @@ def diagnose(
         )
         mpath = runtime.session.artifact_dir / "model-response.md"
         mpath.write_text(
-            f"{mresp.text}\n\nProvider: {mresp.provider}\nModel: {mresp.model}\n{_usage_line(mresp)}",
+            f"{mresp.text}\n\n"
+            f"Provider: {mresp.provider}\n"
+            f"Model: {mresp.model}\n"
+            f"{_usage_line(mresp)}",
             encoding="utf-8",
         )
         spath = runtime.session.artifact_dir / "summary.md"
         spath.write_text(
-            f"Session: {result.session_id}\nTarget: {target}\nType: {result.target_type.value}\nEvidence: {len(result.evidence.items)}\nFindings: {len(result.findings)}\n",
+            f"Session: {result.session_id}\n"
+            f"Target: {target}\n"
+            f"Type: {result.target_type.value}\n"
+            f"Evidence: {len(result.evidence.items)}\n"
+            f"Findings: {len(result.findings)}\n",
             encoding="utf-8",
         )
         if raw and mresp.raw and mresp.raw.get("stdout_jsonl"):
@@ -281,11 +302,23 @@ def diagnose(
             )
         console.print("Model-assisted analysis:\n" + mresp.text)
         console.print(f"Provider: {mresp.provider}\nModel: {mresp.model}\n{_usage_line(mresp)}")
-    console.print(
-        result.model_dump_json(indent=2)
-        if json_output
-        else f"Session: {result.session_id}\nTarget: {target}\nType: {result.target_type.value}\nEvidence: {len(result.evidence.items)} item(s)\nFindings: {len(result.findings)}\nArtifacts:\n- evidence: {ev_path}\n- plan: {plan_path if save_plan else 'not-saved'}\n- model response: {runtime.session.artifact_dir / 'model-response.md' if model else 'n/a'}\n- summary: {runtime.session.artifact_dir / 'summary.md'}"
-    )
+    if json_output:
+        console.print(result.model_dump_json(indent=2))
+    else:
+        model_response_path = runtime.session.artifact_dir / "model-response.md" if model else "n/a"
+        summary = (
+            f"Session: {result.session_id}\n"
+            f"Target: {target}\n"
+            f"Type: {result.target_type.value}\n"
+            f"Evidence: {len(result.evidence.items)} item(s)\n"
+            f"Findings: {len(result.findings)}\n"
+            "Artifacts:\n"
+            f"- evidence: {ev_path}\n"
+            f"- plan: {plan_path if save_plan else 'not-saved'}\n"
+            f"- model response: {model_response_path}\n"
+            f"- summary: {runtime.session.artifact_dir / 'summary.md'}"
+        )
+        console.print(summary)
 
 
 @app.command()
@@ -356,10 +389,8 @@ def apply(plan_file: Path) -> None:
         raise typer.BadParameter("plan file missing")
     Plan.model_validate_json(plan_file.read_text(encoding="utf-8"))
     console.print(
-        (
-            "Apply execution is intentionally disabled in this alpha. Plan validation is available; "
-            "execution will be introduced after safety hardening."
-        )
+        "Apply execution is intentionally disabled in this alpha. "
+        "Plan validation is available; execution will be introduced after safety hardening."
     )
 
 

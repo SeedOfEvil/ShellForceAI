@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+from ast import literal_eval
 from pathlib import Path
 
 import typer
@@ -22,7 +23,7 @@ from shellforgeai.tools import disk, host, network, process, registry, systemd
 from shellforgeai.version import get_build_info
 
 from .commands import route_input
-from .guards import is_multiline_shell_fragment, looks_like_shell_command
+from .guards import is_multiline_shell_fragment, is_shell_fragment_line, looks_like_shell_command
 from .streaming import StreamRenderer
 from .workspace import WorkspaceTrustStore
 
@@ -42,6 +43,31 @@ def _is_machine_health_question(text: str) -> bool:
             "check this system",
             "machine look",
             "anything broken",
+            "firewall is on or off",
+            "firewall status",
+            "firewall enabled",
+            "check firewall",
+        ]
+    )
+
+
+def _is_firewall_question(text: str) -> bool:
+    t = text.lower()
+    return any(
+        p in t
+        for p in [
+            "firewall on or off",
+            "firewall is on or off",
+            "is firewall on",
+            "is firewall off",
+            "is the firewall enabled",
+            "firewall status",
+            "firewall state",
+            "firewall enabled",
+            "check firewall",
+            "iptables status",
+            "nftables status",
+            "pve firewall",
         ]
     )
 
@@ -81,8 +107,12 @@ def _confirm_workspace(console: Console, runtime: RuntimeContext, no_trust_cache
 def _summary_for_check(c) -> str:
     first = (c.stderr or c.stdout or "").splitlines()[0] if (c.stderr or c.stdout) else ""
     if c.tool == "host.info" and "hostname" in c.stdout:
-        t = c.stdout
-        return f"hostname={t.split("'hostname': '")[1].split("'")[0]} kernel={t.split("'kernel': '")[1].split("'")[0]} arch={t.split("'arch': '")[1].split("'")[0]}"
+        payload = literal_eval(c.stdout)
+        return (
+            f"hostname={payload.get('hostname', 'unknown')} "
+            f"kernel={payload.get('kernel', 'unknown')} "
+            f"arch={payload.get('arch', 'unknown')}"
+        )
     if c.tool == "host.resources":
         return (c.stdout or "").replace("{'loadavg': ", "loadavg=").replace("}", "")
     if c.tool == "host.uptime":
@@ -140,6 +170,10 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
     if not _confirm_workspace(console, runtime, no_trust_cache=no_trust_cache):
         return
     renderer = StreamRenderer(console)
+    paste_guard_active = False
+    paste_guard_remaining_lines = 0
+    paste_guard_non_shell_lines = 0
+    paste_guard_first_notice = False
     while True:
         user_input = input("sfai> ").strip()
         routed = route_input(user_input)
@@ -150,6 +184,7 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
             return
         if routed.name == "/clear":
             os.system("clear")
+            paste_guard_active = False
             continue
         if routed.name == "/help":
             console.print("""Session:
@@ -216,11 +251,15 @@ Commands:
                 console.print("Collected evidence:")
                 _evidence_table(console, checks)
                 console.print(
-                    "Health summary:\nRead-only checks completed. Review unavailable rows and investigate as needed."
+                    "Health summary:\n"
+                    "Read-only checks completed. Review unavailable rows "
+                    "and investigate as needed."
                 )
             else:
                 console.print(
-                    f"version={b.display_version} profile={runtime.profile.name} mode={runtime.session.mode}"
+                    f"version={b.display_version} "
+                    f"profile={runtime.profile.name} "
+                    f"mode={runtime.session.mode}"
                 )
             continue
         if routed.name == "/model":
@@ -253,7 +292,10 @@ Commands:
                 else:
                     latest = sessions[-1]
                     console.print(
-                        f"Latest audit session: {latest}\nSession file: {runtime.session.data_dir / 'sessions' / (latest + '.json')}\nArtifacts dir: {runtime.session.data_dir / 'artifacts'}"
+                        f"Latest audit session: {latest}\n"
+                        f"Session file: "
+                        f"{runtime.session.data_dir / 'sessions' / (latest + '.json')}\n"
+                        f"Artifacts dir: {runtime.session.data_dir / 'artifacts'}"
                     )
                 continue
             console.print(
@@ -303,7 +345,11 @@ Commands:
             with console.status("Collecting evidence..."):
                 res = diagnose_target(runtime, routed.args, online=False, since="30m")
             checks = [
-                {"tool": i.source, "status": "ok" if i.ok else "unavailable", "summary": i.summary}
+                {
+                    "tool": i.source,
+                    "status": str(i.metadata.get("status", "ok" if i.ok else "unavailable")),
+                    "summary": i.summary,
+                }
                 for i in res.evidence.items
             ]
             console.print(f"Collected {len(checks)} evidence item(s)")
@@ -384,11 +430,75 @@ Commands:
             console.print(f"Unknown command: {routed.name}")
             console.print("Type /help for available commands.")
             continue
+        if _is_firewall_question(user_input):
+            paste_guard_active = False
+            with console.status("Collecting firewall evidence..."):
+                res = diagnose_target(runtime, "firewall", online=False, since="30m")
+            checks = [
+                {
+                    "tool": i.source,
+                    "status": str(i.metadata.get("status", "ok" if i.ok else "unavailable")),
+                    "summary": i.summary,
+                }
+                for i in res.evidence.items
+            ]
+            console.print(f"Collected {len(checks)} evidence item(s)")
+            _evidence_table(console, checks)
+            missing = [
+                c
+                for c in checks
+                if c["tool"].startswith("command.exists") and c["status"] == "not_found"
+            ]
+            if len(missing) >= 5:
+                console.print(
+                    "Firewall summary:\n"
+                    "ShellForgeAI checked common firewall tools in this environment and "
+                    "none were found. Firewall state cannot be confirmed from this "
+                    "container context. Run ShellForgeAI from the host context to "
+                    "inspect host firewall state."
+                )
+            continue
+
         is_explicit_ask = routed.name == "ask" and routed.args.lower().startswith(
             ("explain this command:", "review this shell snippet:", "what does this command do?")
         )
         raw_for_guard = routed.args if routed.name == "ask" else user_input
-        if not is_explicit_ask and is_multiline_shell_fragment(raw_for_guard):
+        shell_like = is_multiline_shell_fragment(raw_for_guard) or looks_like_shell_command(
+            raw_for_guard
+        )
+        if paste_guard_active and not is_explicit_ask:
+            if shell_like or is_shell_fragment_line(raw_for_guard):
+                if not paste_guard_first_notice:
+                    console.print("""Multiline shell paste detected.
+
+ShellForgeAI interactive mode does not execute shell snippets.
+
+Run it in your shell, or ask me to review it with:
+
+ask review this shell snippet: ...
+
+No command was executed.""")
+                    paste_guard_first_notice = True
+                else:
+                    console.print("Blocked shell paste fragment. No command was executed.")
+                paste_guard_remaining_lines -= 1
+                if raw_for_guard.strip().lower() in {"done", "fi", "esac", "'"}:
+                    paste_guard_active = False
+                if paste_guard_remaining_lines <= 0:
+                    paste_guard_active = False
+                continue
+            paste_guard_non_shell_lines += 1
+            if paste_guard_non_shell_lines >= 3:
+                paste_guard_active = False
+            else:
+                paste_guard_remaining_lines -= 1
+                if paste_guard_remaining_lines <= 0:
+                    paste_guard_active = False
+        if not is_explicit_ask and shell_like:
+            paste_guard_active = True
+            paste_guard_remaining_lines = 20
+            paste_guard_non_shell_lines = 0
+            paste_guard_first_notice = False
             console.print("""Multiline shell paste detected.
 
 ShellForgeAI interactive mode does not execute shell snippets.
@@ -398,17 +508,16 @@ Run it in your shell, or ask me to review it with:
 ask review this shell snippet: ...
 
 No command was executed.""")
+            paste_guard_first_notice = True
             continue
-        if not is_explicit_ask and looks_like_shell_command(raw_for_guard):
-            console.print("""This looks like a shell command pasted into ShellForgeAI interactive mode.
-
-ShellForgeAI is not a shell and will not execute it.
-
-Run this in your host/container shell instead, or ask ShellForgeAI to explain/review it with:
-
-ask explain this command: <command>
-
-No command was executed.""")
+        if not is_explicit_ask and is_shell_fragment_line(raw_for_guard):
+            console.print(
+                "This looks like a shell command pasted into ShellForgeAI interactive mode.\n\n"
+                "ShellForgeAI is not a shell and will not execute it.\n\n"
+                "Run this in your host/container shell instead, or ask ShellForgeAI to "
+                "explain/review it with:\n\nask explain this command: <command>\n\n"
+                "No command was executed."
+            )
             continue
 
         provider = build_provider(runtime.settings)
