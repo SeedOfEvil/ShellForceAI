@@ -325,7 +325,11 @@ Commands:
             with console.status("Collecting evidence..."):
                 res = diagnose_target(runtime, routed.args, online=False, since="30m")
             checks = [
-                {"tool": i.source, "status": "ok" if i.ok else "unavailable", "summary": i.summary}
+                {
+                    "tool": i.source,
+                    "status": str(i.metadata.get("status", "ok" if i.ok else "unavailable")),
+                    "summary": i.summary,
+                }
                 for i in res.evidence.items
             ]
             console.print(f"Collected {len(checks)} evidence item(s)")

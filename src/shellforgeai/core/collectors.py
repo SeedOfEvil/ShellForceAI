@@ -24,7 +24,12 @@ def _summarize(result) -> str:
         else ""
     )
     if result.tool == "command.exists":
-        return f"found at {result.stdout.strip()}" if result.stdout.strip() else "not found"
+        cmd = result.command[-1] if result.command else "command"
+        return (
+            f"{cmd}: found at {result.stdout.strip()}"
+            if result.stdout.strip()
+            else f"{cmd}: not found"
+        )
     if result.tool == "host.info" and "hostname" in result.stdout:
         return result.stdout.replace("'", "").replace("{", "").replace("}", "")[:120]
     if result.tool in {"disk.usage", "disk.inodes"}:
@@ -36,7 +41,20 @@ def _summarize(result) -> str:
         return ", ".join(vals) or (first or "unavailable")
     if result.tool == "network.routes":
         return first or "route summary unavailable"
-    return first[:120] if first else ("ok" if result.ok else "error")
+    if result.tool == "process.find":
+        target = result.command[-1] if result.command else "process"
+        return f"{target}: found process" if result.ok else f"{target}: no matching daemon process"
+    return first[:120] if first else ("ok" if result.ok else "unavailable")
+
+
+def _status_for_result(result) -> str:
+    if result.tool == "command.exists":
+        return "ok" if result.stdout.strip() else "not_found"
+    if result.tool == "process.find":
+        return "ok" if result.ok else "not_found"
+    if not result.ok and "permission denied" in (result.stderr or "").lower():
+        return "denied"
+    return "ok" if result.ok else "unavailable"
 
 
 def _dedupe_items(items: list[EvidenceItem]) -> list[EvidenceItem]:
@@ -54,7 +72,11 @@ def _dedupe_items(items: list[EvidenceItem]) -> list[EvidenceItem]:
 def _to_item(result, category: EvidenceCategory, title: str) -> EvidenceItem:
     content, truncated = truncate_text(result.stdout or result.stderr)
     return EvidenceItem(
-        source=result.tool,
+        source=(
+            f"{result.tool} {result.command[-1]}"
+            if result.tool == "command.exists" and result.command
+            else result.tool
+        ),
         category=category,
         command=result.command,
         ok=result.ok,
@@ -63,6 +85,7 @@ def _to_item(result, category: EvidenceCategory, title: str) -> EvidenceItem:
         summary=_summarize(result),
         content=content,
         truncated=truncated,
+        metadata={"status": _status_for_result(result)},
     )
 
 
