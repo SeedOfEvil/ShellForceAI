@@ -2,9 +2,53 @@ from __future__ import annotations
 
 from shellforgeai.core.evidence import EvidenceCategory, EvidenceItem
 from shellforgeai.knowledge.search import search_local
-from shellforgeai.tools import disk, files, host, journal, network, process, system, systemd
+from shellforgeai.tools import (
+    disk,
+    files,
+    firewall,
+    host,
+    journal,
+    network,
+    process,
+    system,
+    systemd,
+)
 from shellforgeai.tools.services import docker_detect, nginx_detect, ssh_detect
 from shellforgeai.util.text import truncate_text
+
+
+def _summarize(result) -> str:
+    first = (
+        (result.stderr or result.stdout or "").splitlines()[0]
+        if (result.stderr or result.stdout)
+        else ""
+    )
+    if result.tool == "command.exists":
+        return f"found at {result.stdout.strip()}" if result.stdout.strip() else "not found"
+    if result.tool == "host.info" and "hostname" in result.stdout:
+        return result.stdout.replace("'", "").replace("{", "").replace("}", "")[:120]
+    if result.tool in {"disk.usage", "disk.inodes"}:
+        vals = []
+        for ln in (result.stdout or "").splitlines()[1:4]:
+            parts = ln.split()
+            if len(parts) >= 6:
+                vals.append(f"{parts[5]} {parts[4]} used")
+        return ", ".join(vals) or (first or "unavailable")
+    if result.tool == "network.routes":
+        return first or "route summary unavailable"
+    return first[:120] if first else ("ok" if result.ok else "error")
+
+
+def _dedupe_items(items: list[EvidenceItem]) -> list[EvidenceItem]:
+    seen = set()
+    out = []
+    for i in items:
+        key = (i.source, i.path or "", str(i.metadata.get("target", "")), " ".join(i.command or []))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(i)
+    return out
 
 
 def _to_item(result, category: EvidenceCategory, title: str) -> EvidenceItem:
@@ -16,7 +60,7 @@ def _to_item(result, category: EvidenceCategory, title: str) -> EvidenceItem:
         ok=result.ok,
         exit_code=result.exit_code,
         title=title,
-        summary=("ok" if result.ok else "error"),
+        summary=_summarize(result),
         content=content,
         truncated=truncated,
     )
@@ -133,4 +177,12 @@ def collect_ssh_evidence(context) -> list[EvidenceItem]:
 
 
 def collect_docker_evidence(context) -> list[EvidenceItem]:
-    return [_to_item(r, EvidenceCategory.service, "docker collector") for r in docker_detect()]
+    return _dedupe_items(
+        [_to_item(r, EvidenceCategory.service, "docker collector") for r in docker_detect()]
+    )
+
+
+def collect_firewall_evidence(context) -> list[EvidenceItem]:
+    return _dedupe_items(
+        [_to_item(r, EvidenceCategory.network, "firewall collector") for r in firewall.detect()]
+    )

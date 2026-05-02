@@ -19,7 +19,7 @@ from shellforgeai.knowledge.search import search_local
 from shellforgeai.llm.manager import build_provider
 from shellforgeai.llm.prompts import build_contextual_prompt
 from shellforgeai.llm.schemas import ModelRequest
-from shellforgeai.tools import disk, host, network, process, registry, systemd
+from shellforgeai.tools import disk, firewall, host, network, process, registry, systemd
 from shellforgeai.version import get_build_info
 
 from .commands import route_input
@@ -43,6 +43,10 @@ def _is_machine_health_question(text: str) -> bool:
             "check this system",
             "machine look",
             "anything broken",
+            "firewall is on or off",
+            "firewall status",
+            "firewall enabled",
+            "check firewall",
         ]
     )
 
@@ -127,6 +131,7 @@ def _collect_machine_health() -> list[dict[str, str]]:
         network.routes(),
         process.top(),
         systemd.list_failed(),
+        *firewall.detect(),
     ]
     return [
         {

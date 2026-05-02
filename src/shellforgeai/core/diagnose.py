@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from shellforgeai.core.collectors import (
     collect_disk_evidence,
     collect_docker_evidence,
+    collect_firewall_evidence,
     collect_health_evidence,
     collect_host_evidence,
     collect_local_knowledge_evidence,
@@ -42,6 +43,18 @@ class DiagnosisResult(BaseModel):
     audit_path: str | None = None
 
 
+def _dedupe(items):
+    seen = set()
+    out = []
+    for i in items:
+        key = (i.source, i.path or "", " ".join(i.command or []), i.summary)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(i)
+    return out
+
+
 def diagnose_target(
     context, target: str, online: bool = False, since: str = "30m"
 ) -> DiagnosisResult:
@@ -66,8 +79,13 @@ def diagnose_target(
         items.extend(collect_disk_evidence(context))
     elif ttype == TargetType.network:
         items.extend(collect_network_evidence(context))
+        if "firewall" in target.lower():
+            items.extend(collect_firewall_evidence(context))
     else:
-        items.extend(collect_local_knowledge_evidence(context, target))
+        if "firewall" in target.lower():
+            items.extend(collect_firewall_evidence(context))
+        else:
+            items.extend(collect_local_knowledge_evidence(context, target))
     for i in items:
         if not i.ok:
             findings.append(
