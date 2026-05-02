@@ -68,3 +68,5 @@ RUN apt-get update \
 ## Interactive smoke
 
 Run `shellforgeai`, then `/doctor`, `/model`, `/tools`, `diagnose disk`, and `/exit`.
+
+- Note: In restricted containers, Codex may emit bwrap/namespace errors; treat as provider sandbox limitation, not host failure. ShellForgeAI still collects evidence via typed read-only tools.

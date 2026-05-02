@@ -35,7 +35,6 @@ def build_session_context(
     sid = f"sf_{now.strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:6]}"
     data_dir = Path(settings.app.data_dir).expanduser()
     artifact_dir = data_dir / "artifacts" / sid
-    artifact_dir.mkdir(parents=True, exist_ok=True)
     guidance = (cwd / "SHELLFORGE.md").exists()
     return SessionContext(
         session_id=sid,

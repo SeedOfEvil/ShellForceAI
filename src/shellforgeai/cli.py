@@ -21,7 +21,7 @@ from shellforgeai.llm.manager import build_provider
 from shellforgeai.llm.prompts import build_contextual_prompt, build_model_prompt
 from shellforgeai.llm.schemas import ModelRequest
 from shellforgeai.tools import host, journal, registry, systemd
-from shellforgeai.version import __version__
+from shellforgeai.version import __version__, get_build_info
 
 app = typer.Typer(
     no_args_is_help=False,
@@ -50,6 +50,10 @@ def _ctx(ctx: typer.Context) -> RuntimeContext:
     return ctx.obj["runtime"]
 
 
+def _ensure_artifact_dir(runtime: RuntimeContext) -> None:
+    runtime.session.artifact_dir.mkdir(parents=True, exist_ok=True)
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -61,7 +65,10 @@ def main(
     no_trust_cache: bool = typer.Option(False, "--no-trust-cache"),
 ) -> None:
     if version:
-        console.print(f"ShellForgeAI {__version__}")
+        build = get_build_info()
+        console.print(f"ShellForgeAI {build.display_version}")
+        if build.build_line():
+            console.print(build.build_line())
         raise typer.Exit()
     settings = load_settings(config)
     prof = load_profile(profile, Path.cwd())
@@ -75,11 +82,22 @@ def main(
         start_interactive(ctx.obj["runtime"], no_trust_cache=no_trust_cache)
         raise typer.Exit()
 
+
 @app.command("interactive")
-def interactive(ctx: typer.Context, no_trust_cache: bool = typer.Option(False, "--no-trust-cache")) -> None:
+def interactive(
+    ctx: typer.Context, no_trust_cache: bool = typer.Option(False, "--no-trust-cache")
+) -> None:
     from shellforgeai.interactive import start_interactive
 
     start_interactive(_ctx(ctx), no_trust_cache=no_trust_cache)
+
+
+@app.command("version")
+def version_cmd() -> None:
+    build = get_build_info()
+    console.print(f"ShellForgeAI {build.display_version}")
+    if build.build_line():
+        console.print(build.build_line())
 
 
 @app.command()
@@ -87,9 +105,12 @@ def doctor(ctx: typer.Context) -> None:
     runtime = _ctx(ctx)
     audit = AuditStorage(runtime.session.data_dir)
     console.print("ShellForgeAI")
+    build = get_build_info()
     console.print(
-        f"version={__version__} python={sys.version.split()[0]} platform={platform.system()}"
+        f"version={build.display_version} python={sys.version.split()[0]} platform={platform.system()}"
     )
+    if build.build_line():
+        console.print(build.build_line())
     console.print(f"profile={runtime.profile.name} mode={runtime.session.mode}")
     console.print(f"data_dir={runtime.session.data_dir} audit_dir={audit.sessions_dir}")
     console.print(
@@ -204,6 +225,7 @@ def diagnose(
     runtime = _ctx(ctx)
     result = diagnose_target(runtime, target, online=online, since=since)
     audit = AuditStorage(runtime.session.data_dir)
+    _ensure_artifact_dir(runtime)
     ev_path = runtime.session.artifact_dir / "evidence.json"
     ev_path.write_text(result.evidence.model_dump_json(indent=2), encoding="utf-8")
     plan_path = runtime.session.artifact_dir / "plan.json"
@@ -223,6 +245,7 @@ def diagnose(
     }
     audit.append(rec)
     if model:
+        _ensure_artifact_dir(runtime)
         provider = build_provider(runtime.settings)
         ctx_mode = "full" if full_context else "standard"
         prompt = build_contextual_prompt(
@@ -278,6 +301,7 @@ def research(ctx: typer.Context, query: str, model: bool = typer.Option(False, "
         console.print(f"{h.path}:{h.line} {h.snippet}")
     if model:
         runtime = _ctx(ctx)
+        _ensure_artifact_dir(runtime)
         provider = build_provider(runtime.settings)
         resp = provider.complete(
             ModelRequest(
@@ -307,6 +331,7 @@ def plan(ctx: typer.Context, goal: str, model: bool = typer.Option(False, "--mod
             ),
         ],
     )
+    _ensure_artifact_dir(runtime)
     out = runtime.session.artifact_dir / "plan.json"
     out.write_text(p.model_dump_json(indent=2), encoding="utf-8")
     if model:
