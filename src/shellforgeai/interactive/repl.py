@@ -23,7 +23,7 @@ from shellforgeai.tools import disk, host, network, process, registry, systemd
 from shellforgeai.version import get_build_info
 
 from .commands import route_input
-from .guards import is_multiline_shell_fragment, looks_like_shell_command
+from .guards import is_multiline_shell_fragment, is_shell_fragment_line, looks_like_shell_command
 from .streaming import StreamRenderer
 from .workspace import WorkspaceTrustStore
 
@@ -145,6 +145,10 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
     if not _confirm_workspace(console, runtime, no_trust_cache=no_trust_cache):
         return
     renderer = StreamRenderer(console)
+    paste_guard_active = False
+    paste_guard_remaining_lines = 0
+    paste_guard_non_shell_lines = 0
+    paste_guard_first_notice = False
     while True:
         user_input = input("sfai> ").strip()
         routed = route_input(user_input)
@@ -155,6 +159,7 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
             return
         if routed.name == "/clear":
             os.system("clear")
+            paste_guard_active = False
             continue
         if routed.name == "/help":
             console.print("""Session:
@@ -400,7 +405,42 @@ Commands:
             ("explain this command:", "review this shell snippet:", "what does this command do?")
         )
         raw_for_guard = routed.args if routed.name == "ask" else user_input
-        if not is_explicit_ask and is_multiline_shell_fragment(raw_for_guard):
+        shell_like = is_multiline_shell_fragment(raw_for_guard) or looks_like_shell_command(
+            raw_for_guard
+        )
+        if paste_guard_active and not is_explicit_ask:
+            if shell_like or is_shell_fragment_line(raw_for_guard):
+                if not paste_guard_first_notice:
+                    console.print("""Multiline shell paste detected.
+
+ShellForgeAI interactive mode does not execute shell snippets.
+
+Run it in your shell, or ask me to review it with:
+
+ask review this shell snippet: ...
+
+No command was executed.""")
+                    paste_guard_first_notice = True
+                else:
+                    console.print("Blocked shell paste fragment. No command was executed.")
+                paste_guard_remaining_lines -= 1
+                if raw_for_guard.strip().lower() in {"done", "fi", "esac", "'"}:
+                    paste_guard_active = False
+                if paste_guard_remaining_lines <= 0:
+                    paste_guard_active = False
+                continue
+            paste_guard_non_shell_lines += 1
+            if paste_guard_non_shell_lines >= 3:
+                paste_guard_active = False
+            else:
+                paste_guard_remaining_lines -= 1
+                if paste_guard_remaining_lines <= 0:
+                    paste_guard_active = False
+        if not is_explicit_ask and shell_like:
+            paste_guard_active = True
+            paste_guard_remaining_lines = 20
+            paste_guard_non_shell_lines = 0
+            paste_guard_first_notice = False
             console.print("""Multiline shell paste detected.
 
 ShellForgeAI interactive mode does not execute shell snippets.
@@ -410,18 +450,15 @@ Run it in your shell, or ask me to review it with:
 ask review this shell snippet: ...
 
 No command was executed.""")
+            paste_guard_first_notice = True
             continue
-        if not is_explicit_ask and looks_like_shell_command(raw_for_guard):
+        if not is_explicit_ask and is_shell_fragment_line(raw_for_guard):
             console.print(
-                """This looks like a shell command pasted into ShellForgeAI interactive mode.
-
-ShellForgeAI is not a shell and will not execute it.
-
-Run this in your host/container shell instead, or ask ShellForgeAI to explain/review it with:
-
-ask explain this command: <command>
-
-No command was executed."""
+                "This looks like a shell command pasted into ShellForgeAI interactive mode.\n\n"
+                "ShellForgeAI is not a shell and will not execute it.\n\n"
+                "Run this in your host/container shell instead, or ask ShellForgeAI to "
+                "explain/review it with:\n\nask explain this command: <command>\n\n"
+                "No command was executed."
             )
             continue
 

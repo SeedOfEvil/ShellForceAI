@@ -72,4 +72,26 @@ def looks_like_shell_command(text: str) -> bool:
     lowered = raw.lower()
     if lowered.startswith(_SHELL_PREFIXES):
         return True
-    return " docker exec " in lowered or " docker compose " in lowered
+    return (
+        " docker exec " in lowered or " docker compose " in lowered or is_shell_fragment_line(raw)
+    )
+
+
+def is_shell_fragment_line(text: str) -> bool:
+    raw = text.strip()
+    if not raw:
+        return False
+    lowered = raw.lower()
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=.*$", raw):
+        return True
+    if lowered.startswith("test "):
+        return True
+    if raw.startswith("[") and "]" in raw:
+        return True
+    if lowered in {"continue", "break", "then", "else", "fi", "do", "done", "esac"}:
+        return True
+    if lowered.startswith(("echo ", "printf ", "read ")):
+        return True
+    if "$(" in raw or "`" in raw:
+        return True
+    return any(op in raw for op in ("|", "||", "&&", ";", "2>/dev/null", ">/dev/null"))
