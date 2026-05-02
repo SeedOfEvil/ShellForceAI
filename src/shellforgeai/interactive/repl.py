@@ -22,6 +22,7 @@ from shellforgeai.tools import disk, host, network, process, registry, systemd
 from shellforgeai.version import get_build_info
 
 from .commands import route_input
+from .guards import is_multiline_shell_fragment, looks_like_shell_command
 from .streaming import StreamRenderer
 from .workspace import WorkspaceTrustStore
 
@@ -77,6 +78,39 @@ def _confirm_workspace(console: Console, runtime: RuntimeContext, no_trust_cache
     return True
 
 
+def _summary_for_check(c) -> str:
+    first = (c.stderr or c.stdout or "").splitlines()[0] if (c.stderr or c.stdout) else ""
+    if c.tool == "host.info" and "hostname" in c.stdout:
+        t = c.stdout
+        return f"hostname={t.split("'hostname': '")[1].split("'")[0]} kernel={t.split("'kernel': '")[1].split("'")[0]} arch={t.split("'arch': '")[1].split("'")[0]}"
+    if c.tool == "host.resources":
+        return (c.stdout or "").replace("{'loadavg': ", "loadavg=").replace("}", "")
+    if c.tool == "host.uptime":
+        return first or "uptime unavailable"
+    if c.tool in {"disk.usage", "disk.inodes"}:
+        lines = (c.stdout or "").splitlines()[1:3]
+        vals = []
+        for ln in lines:
+            parts = ln.split()
+            if len(parts) >= 6:
+                vals.append(f"{parts[5]} {parts[4]} used")
+        return ", ".join(vals) if vals else (first or "disk summary unavailable")
+    if c.tool == "network.dns" and "nameserver" in (c.stdout or ""):
+        ns = [ln.split()[1] for ln in c.stdout.splitlines() if ln.startswith("nameserver")]
+        return f"docker resolver {ns[0]}" if ns else "dns configured"
+    if c.tool == "network.routes":
+        return first or "route summary unavailable"
+    if c.tool == "process.top":
+        return (
+            "top process summary available"
+            if c.ok
+            else f"unavailable — {first or 'command failed'}"
+        )
+    if c.tool.startswith("systemd") and not c.ok:
+        return f"unavailable — {first or 'systemctl not found'}"
+    return first[:120] if first else ("ok" if c.ok else "unavailable")
+
+
 def _collect_machine_health() -> list[dict[str, str]]:
     checks = [
         host.host_info(),
@@ -93,7 +127,7 @@ def _collect_machine_health() -> list[dict[str, str]]:
         {
             "tool": c.tool,
             "status": "ok" if c.ok else "unavailable",
-            "summary": (c.stderr or c.stdout or "").splitlines()[0][:120],
+            "summary": _summary_for_check(c),
         }
         for c in checks
     ]
@@ -118,24 +152,76 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
             os.system("clear")
             continue
         if routed.name == "/help":
-            console.print(
-                "Session:\n  /help /exit /clear\n"
-                "Status:\n  /status /doctor /model /workspace /mode /profile\n"
-                "Ops:\n  diagnose <target> research <query> plan <goal> ask <question>"
-            )
+            console.print("""Session:
+  /help              Show this help
+  /exit, /quit       Exit ShellForgeAI
+  /clear             Clear the screen
+
+Status:
+  /status            Show runtime summary
+  /doctor            Show ShellForgeAI health
+  /health            Run machine health checks
+  /model             Show model provider status
+  /workspace         Show workspace trust/status
+  /mode              Show current mode
+  /profile           Show active profile
+
+Ops:
+  diagnose <target>  Collect evidence and diagnose targets
+  research <query>   Search local knowledge first
+  plan <goal>        Create a conservative read-only plan
+  ask <question>     Ask the configured model
+
+Debug:
+  /raw on|off        Toggle raw provider events
+  /context <mode>    Set context mode: minimal, standard, full
+
+Examples:
+  diagnose disk
+  research nginx address already in use
+  plan investigate high disk usage
+  ask explain this command: systemctl status nginx --no-pager
+
+Shell paste guard:
+  ShellForgeAI is not a shell. Run host/container commands outside sfai>.
+  To review a command, prefix it with:
+  ask explain this command: ...""")
             continue
         if routed.name == "/examples":
-            console.print(
-                "diagnose disk\nresearch nginx address already in use\n"
-                "plan investigate high disk usage"
-            )
+            console.print("""Diagnostics:
+  diagnose disk
+  diagnose network
+  diagnose nginx
+Research:
+  research nginx address already in use
+  research docker dns resolution
+Planning:
+  plan investigate high disk usage
+  plan troubleshoot nginx 502 errors
+Ask:
+  ask what can you inspect here?
+  ask explain this command: systemctl status nginx --no-pager
+  ask review this shell snippet: df -h && du -xhd1 /var
+Safety:
+  Can you restart nginx for me?
+  What would you check before restarting nginx?
+Commands:
+  /health
+  /audit latest""")
             continue
-        if routed.name in {"/doctor", "/status"}:
+        if routed.name in {"/doctor", "/status", "/health"}:
             b = get_build_info()
-            console.print(
-                f"version={b.display_version} profile={runtime.profile.name} "
-                f"mode={runtime.session.mode}"
-            )
+            if routed.name == "/health":
+                checks = _collect_machine_health()
+                console.print("Collected evidence:")
+                _evidence_table(console, checks)
+                console.print(
+                    "Health summary:\nRead-only checks completed. Review unavailable rows and investigate as needed."
+                )
+            else:
+                console.print(
+                    f"version={b.display_version} profile={runtime.profile.name} mode={runtime.session.mode}"
+                )
             continue
         if routed.name == "/model":
             info = build_provider(runtime.settings).doctor()
@@ -161,6 +247,15 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
             continue
         if routed.name == "/audit":
             sessions = AuditStorage(runtime.session.data_dir).list_sessions()
+            if routed.args.strip().lower() == "latest":
+                if not sessions:
+                    console.print("No audit sessions found.")
+                else:
+                    latest = sessions[-1]
+                    console.print(
+                        f"Latest audit session: {latest}\nSession file: {runtime.session.data_dir / 'sessions' / (latest + '.json')}\nArtifacts dir: {runtime.session.data_dir / 'artifacts'}"
+                    )
+                continue
             console.print(
                 "No audit sessions found."
                 if not sessions
@@ -288,6 +383,32 @@ def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> 
         if user_input.startswith("/"):
             console.print(f"Unknown command: {routed.name}")
             console.print("Type /help for available commands.")
+            continue
+        is_explicit_ask = routed.name == "ask" and routed.args.lower().startswith(
+            ("explain this command:", "review this shell snippet:", "what does this command do?")
+        )
+        raw_for_guard = routed.args if routed.name == "ask" else user_input
+        if not is_explicit_ask and is_multiline_shell_fragment(raw_for_guard):
+            console.print("""Multiline shell paste detected.
+
+ShellForgeAI interactive mode does not execute shell snippets.
+
+Run it in your shell, or ask me to review it with:
+
+ask review this shell snippet: ...
+
+No command was executed.""")
+            continue
+        if not is_explicit_ask and looks_like_shell_command(raw_for_guard):
+            console.print("""This looks like a shell command pasted into ShellForgeAI interactive mode.
+
+ShellForgeAI is not a shell and will not execute it.
+
+Run this in your host/container shell instead, or ask ShellForgeAI to explain/review it with:
+
+ask explain this command: <command>
+
+No command was executed.""")
             continue
 
         provider = build_provider(runtime.settings)
