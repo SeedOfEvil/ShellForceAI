@@ -19,7 +19,7 @@ from shellforgeai.knowledge.search import search_local
 from shellforgeai.llm.manager import build_provider
 from shellforgeai.llm.prompts import build_contextual_prompt
 from shellforgeai.llm.schemas import ModelRequest
-from shellforgeai.tools import disk, firewall, host, network, process, registry, systemd
+from shellforgeai.tools import disk, host, network, process, registry, systemd
 from shellforgeai.version import get_build_info
 
 from .commands import route_input
@@ -57,6 +57,9 @@ def _is_firewall_question(text: str) -> bool:
         p in t
         for p in [
             "firewall on or off",
+            "firewall is on or off",
+            "is firewall on",
+            "is the firewall enabled",
             "firewall status",
             "firewall enabled",
             "check firewall",
@@ -148,7 +151,6 @@ def _collect_machine_health() -> list[dict[str, str]]:
         network.routes(),
         process.top(),
         systemd.list_failed(),
-        *firewall.detect(),
     ]
     return [
         {
@@ -508,6 +510,20 @@ No command was executed.""")
             ]
             console.print(f"Collected {len(checks)} evidence item(s)")
             _evidence_table(console, checks)
+            missing = [
+                c
+                for c in checks
+                if c["tool"].startswith("command.exists") and c["status"] == "not_found"
+            ]
+            if len(missing) >= 5:
+                console.print(
+                    "Firewall summary:\n"
+                    "ShellForgeAI checked common firewall tools in this environment and "
+                    "none were found. Firewall state cannot be confirmed from this "
+                    "container context. Run ShellForgeAI from the host context to "
+                    "inspect host firewall state."
+                )
+                continue
             context["evidence"] = checks
             kind = "diagnose"
         elif _is_machine_health_question(user_input):
