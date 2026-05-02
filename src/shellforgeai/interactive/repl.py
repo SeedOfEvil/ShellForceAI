@@ -59,11 +59,12 @@ def _is_firewall_question(text: str) -> bool:
             "firewall on or off",
             "firewall is on or off",
             "is firewall on",
+            "is firewall off",
             "is the firewall enabled",
             "firewall status",
+            "firewall state",
             "firewall enabled",
             "check firewall",
-            "ufw status",
             "iptables status",
             "nftables status",
             "pve firewall",
@@ -429,6 +430,35 @@ Commands:
             console.print(f"Unknown command: {routed.name}")
             console.print("Type /help for available commands.")
             continue
+        if _is_firewall_question(user_input):
+            paste_guard_active = False
+            with console.status("Collecting firewall evidence..."):
+                res = diagnose_target(runtime, "firewall", online=False, since="30m")
+            checks = [
+                {
+                    "tool": i.source,
+                    "status": str(i.metadata.get("status", "ok" if i.ok else "unavailable")),
+                    "summary": i.summary,
+                }
+                for i in res.evidence.items
+            ]
+            console.print(f"Collected {len(checks)} evidence item(s)")
+            _evidence_table(console, checks)
+            missing = [
+                c
+                for c in checks
+                if c["tool"].startswith("command.exists") and c["status"] == "not_found"
+            ]
+            if len(missing) >= 5:
+                console.print(
+                    "Firewall summary:\n"
+                    "ShellForgeAI checked common firewall tools in this environment and "
+                    "none were found. Firewall state cannot be confirmed from this "
+                    "container context. Run ShellForgeAI from the host context to "
+                    "inspect host firewall state."
+                )
+            continue
+
         is_explicit_ask = routed.name == "ask" and routed.args.lower().startswith(
             ("explain this command:", "review this shell snippet:", "what does this command do?")
         )
@@ -497,36 +527,7 @@ No command was executed.""")
             "mode": runtime.session.mode,
             "workspace_trusted": True,
         }
-        if _is_firewall_question(user_input):
-            with console.status("Collecting firewall evidence..."):
-                res = diagnose_target(runtime, "firewall", online=False, since="30m")
-            checks = [
-                {
-                    "tool": i.source,
-                    "status": str(i.metadata.get("status", "ok" if i.ok else "unavailable")),
-                    "summary": i.summary,
-                }
-                for i in res.evidence.items
-            ]
-            console.print(f"Collected {len(checks)} evidence item(s)")
-            _evidence_table(console, checks)
-            missing = [
-                c
-                for c in checks
-                if c["tool"].startswith("command.exists") and c["status"] == "not_found"
-            ]
-            if len(missing) >= 5:
-                console.print(
-                    "Firewall summary:\n"
-                    "ShellForgeAI checked common firewall tools in this environment and "
-                    "none were found. Firewall state cannot be confirmed from this "
-                    "container context. Run ShellForgeAI from the host context to "
-                    "inspect host firewall state."
-                )
-                continue
-            context["evidence"] = checks
-            kind = "diagnose"
-        elif _is_machine_health_question(user_input):
+        if _is_machine_health_question(user_input):
             with console.status("Collecting evidence..."):
                 checks = _collect_machine_health()
             console.print(f"Collected {len(checks)} evidence item(s)")

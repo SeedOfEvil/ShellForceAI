@@ -7,5 +7,6 @@ def test_firewall_question_detection() -> None:
     assert _is_firewall_question("is the firewall enabled?")
     assert _is_firewall_question("firewall status")
     assert _is_firewall_question("check firewall")
-    assert _is_firewall_question("ufw status")
+    assert _is_firewall_question("firewall state")
+    assert not _is_firewall_question("ufw status")
     assert not _is_firewall_question("diagnose disk")

@@ -95,3 +95,18 @@ def test_multiline_paste_quarantine_blocks_fragments_and_allows_exit(monkeypatch
     assert "Goodbye." in res.stdout
     assert called["v"] == 0
     assert not (tmp_path / "artifacts").exists()
+
+
+def test_firewall_status_routes_without_paste_guard(monkeypatch) -> None:
+    def boom(*args, **kwargs):
+        raise AssertionError("model should not be called for deterministic firewall summary")
+
+    monkeypatch.setattr("shellforgeai.interactive.repl.build_provider", boom)
+    res = runner.invoke(
+        app,
+        ["interactive", "--no-trust-cache"],
+        input="y\nfirewall status\n/exit\n",
+    )
+    assert res.exit_code == 0
+    assert "Collected" in res.stdout
+    assert "Multiline shell paste detected" not in res.stdout
