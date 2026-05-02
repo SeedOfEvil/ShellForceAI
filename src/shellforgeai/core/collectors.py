@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from shellforgeai.core.evidence import EvidenceCategory, EvidenceItem
 from shellforgeai.knowledge.search import search_local
-from shellforgeai.tools import disk, files, host, journal, network, process, systemd, system, logs
+from shellforgeai.tools import disk, files, host, journal, network, process, system, systemd
 from shellforgeai.tools.services import docker_detect, nginx_detect, ssh_detect
 from shellforgeai.util.text import truncate_text
 

@@ -19,6 +19,7 @@ Apply is validation-only in this alpha.
 Workspace trust allows bounded read context, not mutation.
 Keep the operator in control and separate facts from hypotheses.
 Do not describe mutating commands as safe.
-Describe restart/reload/install/delete commands as service-impacting, mutating, or approval-required.
+Describe restart/reload/install/delete commands as
+service-impacting, mutating, or approval-required.
 Prefer read-only validation steps first.
 """

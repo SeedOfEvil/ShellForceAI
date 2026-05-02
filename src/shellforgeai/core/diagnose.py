@@ -7,14 +7,14 @@ from pydantic import BaseModel, Field
 
 from shellforgeai.core.collectors import (
     collect_disk_evidence,
+    collect_docker_evidence,
+    collect_health_evidence,
     collect_host_evidence,
     collect_local_knowledge_evidence,
     collect_network_evidence,
-    collect_service_evidence,
-    collect_health_evidence,
     collect_nginx_evidence,
+    collect_service_evidence,
     collect_ssh_evidence,
-    collect_docker_evidence,
 )
 from shellforgeai.core.evidence import EvidenceBundle, TargetType, classify_target
 from shellforgeai.core.plans import Plan, PlanStep
@@ -116,7 +116,10 @@ def diagnose_target(
             PlanStep(
                 step_id="3",
                 title="Check mount layout",
-                description="Review mount points and identify heavy paths for future read-only du collection.",
+                description=(
+                    "Review mount points and identify heavy paths for future "
+                    "read-only du collection."
+                ),
             ),
         ]
     elif ttype == TargetType.network:
@@ -132,7 +135,10 @@ def diagnose_target(
             PlanStep(
                 step_id="3",
                 title="Review listeners",
-                description="Determine whether issue maps to DNS, routing, local listener, or external path.",
+                description=(
+                    "Determine whether issue maps to DNS, routing, local listener, "
+                    "or external path."
+                ),
             ),
         ]
     elif ttype == TargetType.service:
@@ -140,7 +146,9 @@ def diagnose_target(
             PlanStep(
                 step_id="1",
                 title="Check service manager availability",
-                description="Confirm systemd/journalctl availability and note container fallback mode.",
+                description=(
+                    "Confirm systemd/journalctl availability and note container fallback mode."
+                ),
             ),
             PlanStep(
                 step_id="2",
@@ -168,7 +176,9 @@ def diagnose_target(
             PlanStep(
                 step_id="3",
                 title="Prepare operator-approved remediation",
-                description="Document exact change/reload steps for explicit approval in later phase.",
+                description=(
+                    "Document exact change/reload steps for explicit approval in later phase."
+                ),
             ),
         ]
     plan = Plan(

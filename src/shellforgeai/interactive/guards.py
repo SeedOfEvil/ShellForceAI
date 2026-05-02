@@ -58,11 +58,9 @@ def is_multiline_shell_fragment(text: str) -> bool:
         return True
     if re.match(r"^(for|if|while|do|done|then|fi)\b", lowered):
         return True
-    if ("$(" in raw or "`" in raw) and any(
+    return ("$(" in raw or "`" in raw) and any(
         x in lowered for x in ("for ", "do", "done", "ls", "find", "echo")
-    ):
-        return True
-    return False
+    )
 
 
 def looks_like_shell_command(text: str) -> bool:
@@ -74,6 +72,4 @@ def looks_like_shell_command(text: str) -> bool:
     lowered = raw.lower()
     if lowered.startswith(_SHELL_PREFIXES):
         return True
-    if " docker exec " in lowered or " docker compose " in lowered:
-        return True
-    return False
+    return " docker exec " in lowered or " docker compose " in lowered

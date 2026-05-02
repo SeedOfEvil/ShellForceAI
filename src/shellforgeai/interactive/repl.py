@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+from ast import literal_eval
 from pathlib import Path
 
 import typer
@@ -81,8 +82,12 @@ def _confirm_workspace(console: Console, runtime: RuntimeContext, no_trust_cache
 def _summary_for_check(c) -> str:
     first = (c.stderr or c.stdout or "").splitlines()[0] if (c.stderr or c.stdout) else ""
     if c.tool == "host.info" and "hostname" in c.stdout:
-        t = c.stdout
-        return f"hostname={t.split("'hostname': '")[1].split("'")[0]} kernel={t.split("'kernel': '")[1].split("'")[0]} arch={t.split("'arch': '")[1].split("'")[0]}"
+        payload = literal_eval(c.stdout)
+        return (
+            f"hostname={payload.get('hostname', 'unknown')} "
+            f"kernel={payload.get('kernel', 'unknown')} "
+            f"arch={payload.get('arch', 'unknown')}"
+        )
     if c.tool == "host.resources":
         return (c.stdout or "").replace("{'loadavg': ", "loadavg=").replace("}", "")
     if c.tool == "host.uptime":
@@ -216,11 +221,15 @@ Commands:
                 console.print("Collected evidence:")
                 _evidence_table(console, checks)
                 console.print(
-                    "Health summary:\nRead-only checks completed. Review unavailable rows and investigate as needed."
+                    "Health summary:\n"
+                    "Read-only checks completed. Review unavailable rows "
+                    "and investigate as needed."
                 )
             else:
                 console.print(
-                    f"version={b.display_version} profile={runtime.profile.name} mode={runtime.session.mode}"
+                    f"version={b.display_version} "
+                    f"profile={runtime.profile.name} "
+                    f"mode={runtime.session.mode}"
                 )
             continue
         if routed.name == "/model":
@@ -253,7 +262,10 @@ Commands:
                 else:
                     latest = sessions[-1]
                     console.print(
-                        f"Latest audit session: {latest}\nSession file: {runtime.session.data_dir / 'sessions' / (latest + '.json')}\nArtifacts dir: {runtime.session.data_dir / 'artifacts'}"
+                        f"Latest audit session: {latest}\n"
+                        f"Session file: "
+                        f"{runtime.session.data_dir / 'sessions' / (latest + '.json')}\n"
+                        f"Artifacts dir: {runtime.session.data_dir / 'artifacts'}"
                     )
                 continue
             console.print(
@@ -400,7 +412,8 @@ ask review this shell snippet: ...
 No command was executed.""")
             continue
         if not is_explicit_ask and looks_like_shell_command(raw_for_guard):
-            console.print("""This looks like a shell command pasted into ShellForgeAI interactive mode.
+            console.print(
+                """This looks like a shell command pasted into ShellForgeAI interactive mode.
 
 ShellForgeAI is not a shell and will not execute it.
 
@@ -408,7 +421,8 @@ Run this in your host/container shell instead, or ask ShellForgeAI to explain/re
 
 ask explain this command: <command>
 
-No command was executed.""")
+No command was executed."""
+            )
             continue
 
         provider = build_provider(runtime.settings)
