@@ -64,3 +64,5 @@ PR7: ShellForgeAI interactive banner now includes rotating quotes; build metadat
 - Arbitrary shell remains blocked in interactive mode.
 - Mutating/service-impacting actions remain blocked or approval-required/operator-run.
 - apply remains validation-only in this alpha.
+
+- Interactive natural-language diagnostics now return synthesized operator guidance after evidence collection; they no longer stop at collector tables/artifact paths.
