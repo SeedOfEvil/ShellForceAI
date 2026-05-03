@@ -47,6 +47,13 @@ def _is_machine_health_question(text: str) -> bool:
             "firewall status",
             "firewall enabled",
             "check firewall",
+            "anything wrong with my computer",
+            "anything wrong with this machine",
+            "is my computer okay",
+            "do you see any issues",
+            "host health",
+            "computer health",
+            "machine health",
         ]
     )
 
@@ -533,6 +540,7 @@ No command was executed.""")
             console.print(f"Collected {len(checks)} evidence item(s)")
             _evidence_table(console, checks)
             context["machine_health"] = checks
+            context["evidence_label"] = "general health evidence"
             kind = "diagnose"
         with console.status("Preparing context..."):
             prompt = build_contextual_prompt(

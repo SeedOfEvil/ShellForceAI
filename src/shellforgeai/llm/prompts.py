@@ -44,6 +44,7 @@ Knowledge:
 
 When more evidence is needed, request ShellForgeAI collectors by name before raw shell commands."""
     evidence_rows = context.get("evidence") or context.get("machine_health") or []
+    evidence_label = context.get("evidence_label", "evidence")
     evidence_block = ""
     if isinstance(evidence_rows, list) and evidence_rows:
         lines = []
@@ -53,7 +54,7 @@ When more evidence is needed, request ShellForgeAI collectors by name before raw
                 status = row.get("status") or row.get("metadata", {}).get("status") or "unknown"
                 summary = row.get("summary") or ""
                 lines.append(f"- {tool}: {status} — {summary}".strip())
-        evidence_block = "ShellForgeAI already collected evidence:\n" + "\n".join(lines)
+        evidence_block = f"ShellForgeAI already collected {evidence_label}:\n" + "\n".join(lines)
     payload = redact_text(json.dumps(context, indent=2, ensure_ascii=False))[:max_chars]
     return (
         f"{SHELLFORGE_SYSTEM_PROMPT}\n\n{capability_map}\n\n"
