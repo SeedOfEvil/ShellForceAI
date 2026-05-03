@@ -28,6 +28,8 @@ def test_route_input() -> None:
     assert route_input("research nginx").name == "research"
     assert route_input("plan fix disk").name == "plan"
     assert route_input("what is happening").name == "ask"
+    assert route_input("my machine is running slow").args == "performance"
+    assert route_input("high cpu").name == "diagnose"
 
 
 def test_trust_store(tmp_path: Path) -> None:

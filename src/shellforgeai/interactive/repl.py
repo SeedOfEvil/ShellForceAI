@@ -47,6 +47,13 @@ def _is_machine_health_question(text: str) -> bool:
             "firewall status",
             "firewall enabled",
             "check firewall",
+            "anything wrong with my computer",
+            "anything wrong with this machine",
+            "is my computer okay",
+            "do you see any issues",
+            "host health",
+            "computer health",
+            "machine health",
         ]
     )
 
@@ -142,7 +149,7 @@ def _summary_for_check(c) -> str:
 
 
 def _collect_machine_health() -> list[dict[str, str]]:
-    checks = [
+    health_checks = [
         host.host_info(),
         host.host_resources(),
         host.host_uptime(),
@@ -159,10 +166,58 @@ def _collect_machine_health() -> list[dict[str, str]]:
             "status": "ok" if c.ok else "unavailable",
             "summary": _summary_for_check(c),
         }
-        for c in checks
+        for c in health_checks
     ]
 
 
+def _deterministic_operator_summary(intent: str, checks: list[dict[str, str]]) -> str:
+    def _find(tool: str) -> dict[str, str] | None:
+        return next((c for c in checks if c["tool"] == tool), None)
+
+    disk_row = _find("disk.usage")
+    inode_row = _find("disk.inodes")
+    container_row = _find("system.container_detect")
+    load_row = _find("host.resources")
+    systemd_row = _find("systemd.list_failed")
+    assessment = "No critical issue seen from current read-only context."
+    clues = []
+    facts = []
+    for c in checks[:14]:
+        facts.append(f"- {c['tool']}: {c['status']} — {c['summary']}")
+    if disk_row and "% used" in disk_row["summary"]:
+        if " 9" in disk_row["summary"] or "100%" in disk_row["summary"]:
+            assessment = "Filesystem pressure looks critical."
+            clues.append("- High confidence: filesystem usage is critically high.")
+        elif " 8" in disk_row["summary"]:
+            assessment = "Mostly okay, but filesystem usage is getting high."
+            clues.append(
+                "- Medium confidence: disk usage is elevated and worth drilling into first."
+            )
+    if container_row and "docker" in container_row["summary"].lower():
+        clues.append("- High confidence: container context limits host-level visibility.")
+    if systemd_row and systemd_row["status"] != "ok":
+        clues.append("- High confidence: systemd checks are unavailable in this environment.")
+    if load_row:
+        clues.append(f"- Low confidence: load snapshot is {load_row['summary']}.")
+    if inode_row and "% used" in inode_row["summary"]:
+        clues.append(f"- Medium confidence: inode usage snapshot is {inode_row['summary']}.")
+    return (
+        "## Assessment\n"
+        f"{assessment}\n\n"
+        "## Facts found\n"
+        + ("\n".join(facts) if facts else "- No evidence rows were collected.")
+        + "\n\n## Clues / likely causes\n"
+        + (
+            "\n".join(clues)
+            if clues
+            else "- No strong clues yet; continue with read-only evidence."
+        )
+        + "\n\n## Missing evidence\n"
+        "- Host-level visibility may be incomplete in containerized contexts.\n\n"
+        "## Safe next steps\n"
+        f"- Run `diagnose {intent}` again after context changes.\n"
+        "- Prefer additional read-only collectors before considering any changes.\n"
+    )
 def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> None:
     console = Console()
     trusted = WorkspaceTrustStore(runtime.session.data_dir).is_trusted(Path.cwd())
@@ -354,6 +409,7 @@ Commands:
             ]
             console.print(f"Collected {len(checks)} evidence item(s)")
             _evidence_table(console, checks)
+            natural_language_diagnose = not user_input.lower().startswith("diagnose ")
             with console.status("Building findings..."):
                 pass
             with console.status("Writing artifacts..."):
@@ -388,6 +444,44 @@ Commands:
                 f"Findings: {len(res.findings)}\n"
                 f"Artifacts:\n- evidence: {ep}\n- plan: {pp}\n- summary: {sp}"
             )
+            if natural_language_diagnose:
+                provider_error = None
+                try:
+                    provider = build_provider(runtime.settings)
+                    prompt = build_contextual_prompt(
+                        user_input,
+                        {
+                            "intent": routed.args,
+                            "evidence_label": f"{routed.args} evidence",
+                            "evidence": checks,
+                            "findings": [f.model_dump() for f in res.findings],
+                            "artifacts": {"evidence": str(ep), "plan": str(pp), "summary": str(sp)},
+                        },
+                        mode="standard",
+                    )
+                    mresp = provider.complete(
+                        ModelRequest(
+                            prompt=prompt,
+                            model=runtime.settings.model.model,
+                            provider=runtime.settings.model.provider,
+                            timeout_seconds=runtime.settings.model.timeout_seconds,
+                            metadata={"command_kind": "diagnose", "intent": routed.args},
+                        )
+                    )
+                    console.print("\n## Assessment")
+                    renderer.render(_sanitize_provider_error(mresp.text), None)
+                except Exception as exc:
+                    provider_error = str(exc)
+                if provider_error:
+                    console.print(
+                        _deterministic_operator_summary(routed.args, checks)
+                        + "\n## Artifacts\n"
+                        + f"- evidence: {ep}\n- plan: {pp}\n- summary: {sp}\n"
+                        + (
+                            "\nNote: model synthesis unavailable "
+                            f"({_sanitize_provider_error(provider_error)})."
+                        )
+                    )
             continue
         if routed.name in {"plan", "/plan"}:
             with console.status("Building plan..."):
@@ -533,6 +627,7 @@ No command was executed.""")
             console.print(f"Collected {len(checks)} evidence item(s)")
             _evidence_table(console, checks)
             context["machine_health"] = checks
+            context["evidence_label"] = "general health evidence"
             kind = "diagnose"
         with console.status("Preparing context..."):
             prompt = build_contextual_prompt(

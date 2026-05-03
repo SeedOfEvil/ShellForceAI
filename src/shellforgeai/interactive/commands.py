@@ -18,6 +18,85 @@ def route_input(text: str) -> RoutedCommand:
         return RoutedCommand(name=head.lower(), args=tail.strip())
 
     lowered = raw.lower()
+    perf_intents = [
+        "my machine is running slow",
+        "my computer is slow",
+        "my pc is slow",
+        "pc feels slow",
+        "system feels slow",
+        "machine feels sluggish",
+        "server is slow",
+        "host is slow",
+        "why is this machine slow",
+        "why is my server slow",
+        "high cpu",
+        "high memory",
+        "high load",
+        "performance issue",
+        "high io",
+        "laggy",
+        "hanging",
+        "system is crawling",
+        "everything is slow",
+    ]
+    if any(p in lowered for p in perf_intents):
+        return RoutedCommand(name="diagnose", args="performance")
+    disk_intents = [
+        "how much disk space do we have left",
+        "disk space left",
+        "free disk space",
+        "are we running out of disk",
+        "is disk full",
+        "disk usage",
+        "storage left",
+        "how full is the disk",
+        "out of space",
+        "inode usage",
+        "are inodes full",
+    ]
+    if any(p in lowered for p in disk_intents):
+        return RoutedCommand(name="diagnose", args="disk")
+    health_intents = [
+        "my system is glitchy",
+        "computer is acting weird",
+        "machine is acting weird",
+        "something is wrong with this machine",
+        "system health",
+        "check this machine",
+        "any issue on this machine",
+        "any issues on this machine",
+        "anything wrong with my computer",
+        "anything wrong with this computer",
+        "anything wrong with my machine",
+        "anything wrong with this machine",
+        "anything wrong with my pc",
+        "anything wrong with this pc",
+        "anything wrong with my server",
+        "anything wrong with this server",
+        "is anything wrong",
+        "is anything wrong with this system",
+        "is my computer okay",
+        "is my machine okay",
+        "is this host okay",
+        "is this system healthy",
+        "check my computer",
+        "check my machine",
+        "check this host",
+        "check this system",
+        "host health",
+        "computer health",
+        "machine health",
+        "do you see any issues",
+        "do you see anything wrong",
+        "what’s wrong with my computer",
+        "what is wrong with my computer",
+        "is this host healthy",
+        "things are unstable",
+        "weird behavior",
+        "glitches",
+    ]
+    if any(p in lowered for p in health_intents):
+        return RoutedCommand(name="diagnose", args="health")
     for prefix, cmd in [
         ("diagnose ", "diagnose"),
         ("research ", "research"),

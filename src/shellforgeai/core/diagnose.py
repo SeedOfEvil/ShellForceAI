@@ -14,6 +14,7 @@ from shellforgeai.core.collectors import (
     collect_local_knowledge_evidence,
     collect_network_evidence,
     collect_nginx_evidence,
+    collect_performance_evidence,
     collect_service_evidence,
     collect_ssh_evidence,
 )
@@ -64,8 +65,15 @@ def diagnose_target(
     warnings: list[str] = []
     if online and not context.session.online_enabled:
         warnings.append("Online research requested but blocked by active profile/policy.")
-    if target in {"health", "host"}:
+    canonical_target = target.lower().strip()
+    if canonical_target in {"performance", "slow", "slowness"}:
+        canonical_target = "host"
+    if target in {"health"} or canonical_target == "host":
         items.extend(collect_health_evidence(context))
+    if any(
+        k in target.lower() for k in ["slow", "performance", "high cpu", "high memory", "high load"]
+    ):
+        items.extend(collect_performance_evidence(context))
     elif ttype == TargetType.service:
         items.extend(collect_service_evidence(context, target, since=since))
         if target.lower() == "nginx":
