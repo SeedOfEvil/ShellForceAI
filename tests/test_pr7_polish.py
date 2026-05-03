@@ -42,6 +42,8 @@ def test_prompt_has_system_identity():
 
 def test_machine_health_intent_detection():
     assert _is_machine_health_question("Any issue on this machine?")
+    assert _is_machine_health_question("Is my computer having any issue?")
+    assert _is_machine_health_question("So is everything okay with my computer?")
 
 
 def test_bwrap_error_sanitized():
@@ -87,3 +89,27 @@ def test_workspace_and_profile_are_deterministic(monkeypatch):
     )
     assert res.exit_code == 0
     assert "Workspace:" in res.stdout and "Profile:" in res.stdout and "Mode:" in res.stdout
+
+
+def test_health_prompt_never_silent_on_empty_stream(monkeypatch):
+    class Provider:
+        def stream_complete(self, req):
+            yield {"type": "final", "response": type("R", (), {"text": ""})()}
+
+    class FakeRes:
+        session_id = "s1"
+        target_type = type("T", (), {"value": "host"})()
+        findings = []
+        evidence = type("E", (), {"items": []})()
+        proposed_plan = type("P", (), {"model_dump_json": lambda self, indent=2: "{}"})()
+
+    monkeypatch.setattr("shellforgeai.interactive.repl.build_provider", lambda *_: Provider())
+    monkeypatch.setattr("shellforgeai.interactive.repl.diagnose_target", lambda *a, **k: FakeRes())
+    res = runner.invoke(
+        app,
+        ["interactive", "--no-trust-cache"],
+        input="y\nIs my computer having any issue?\n/exit\n",
+    )
+    assert res.exit_code == 0
+    assert "Collected 0 evidence item(s)" in res.stdout
+    assert "## Assessment" in res.stdout

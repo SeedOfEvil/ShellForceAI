@@ -502,7 +502,9 @@ Commands:
                         mresp_text, encoding="utf-8"
                     )
                     console.print("\n## Assessment")
-                    if not mresp_streamed:
+                    if not mresp_text.strip():
+                        console.print(_deterministic_operator_summary(routed.args, checks))
+                    elif not mresp_streamed:
                         renderer.render(_sanitize_provider_error(mresp_text), None)
                 except Exception as exc:
                     provider_error = str(exc)
@@ -692,5 +694,13 @@ No command was executed.""")
             (runtime.session.artifact_dir / "model-response.md").write_text(
                 resp_text, encoding="utf-8"
             )
-        if not resp_streamed:
+        if not resp_text.strip() and kind == "diagnose":
+            console.print(
+                _deterministic_operator_summary("health", context.get("machine_health", []))
+            )
+        elif not resp_text.strip():
+            console.print(
+                "ShellForgeAI did not produce a response for that input. No action was taken."
+            )
+        elif not resp_streamed:
             renderer.render(_sanitize_provider_error(resp_text), None)
