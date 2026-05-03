@@ -29,6 +29,18 @@ def test_health_intents_route_to_diagnose_health() -> None:
         assert routed.args == "health"
 
 
+def test_service_intents_route_to_service_discovery() -> None:
+    for phrase in [
+        "What services this computer is running?",
+        "what services are running",
+        "what ports are open",
+        "what is listening on ports",
+    ]:
+        routed = route_input(phrase)
+        assert routed.name == "diagnose"
+        assert routed.args == "services"
+
+
 def test_prompt_includes_collected_evidence_instruction() -> None:
     prompt = build_model_prompt(
         "how much disk space left",

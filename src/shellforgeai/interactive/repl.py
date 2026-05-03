@@ -95,6 +95,31 @@ def _evidence_table(console: Console, checks: list[dict[str, str]]) -> None:
     console.print(t)
 
 
+def _run_model_synthesis(
+    console: Console, provider, request: ModelRequest, raw: bool
+) -> tuple[str, bool]:
+    final_text = ""
+    if hasattr(provider, "stream_complete"):
+        with console.status("Synthesizing operator summary..."):
+            pass
+        for event in provider.stream_complete(request):
+            etype = event.get("type")
+            if etype == "text":
+                console.print(event.get("text", ""), end="")
+            elif etype == "raw" and raw:
+                console.print(event.get("raw", ""))
+            elif etype == "final":
+                resp = event.get("response")
+                if resp is not None:
+                    final_text = resp.text
+                break
+        console.print("")
+        return final_text, True
+    with console.status("Asking model..."):
+        resp = provider.complete(request)
+    return resp.text, False
+
+
 def _confirm_workspace(console: Console, runtime: RuntimeContext, no_trust_cache: bool) -> bool:
     store = WorkspaceTrustStore(runtime.session.data_dir)
     workspace = Path.cwd()
@@ -218,6 +243,8 @@ def _deterministic_operator_summary(intent: str, checks: list[dict[str, str]]) -
         f"- Run `diagnose {intent}` again after context changes.\n"
         "- Prefer additional read-only collectors before considering any changes.\n"
     )
+
+
 def start_interactive(runtime: RuntimeContext, no_trust_cache: bool = False) -> None:
     console = Console()
     trusted = WorkspaceTrustStore(runtime.session.data_dir).is_trusted(Path.cwd())
@@ -459,17 +486,24 @@ Commands:
                         },
                         mode="standard",
                     )
-                    mresp = provider.complete(
+                    mresp_text, mresp_streamed = _run_model_synthesis(
+                        console,
+                        provider,
                         ModelRequest(
                             prompt=prompt,
                             model=runtime.settings.model.model,
                             provider=runtime.settings.model.provider,
                             timeout_seconds=runtime.settings.model.timeout_seconds,
                             metadata={"command_kind": "diagnose", "intent": routed.args},
-                        )
+                        ),
+                        raw=False,
+                    )
+                    (runtime.session.artifact_dir / "model-response.md").write_text(
+                        mresp_text, encoding="utf-8"
                     )
                     console.print("\n## Assessment")
-                    renderer.render(_sanitize_provider_error(mresp.text), None)
+                    if not mresp_streamed:
+                        renderer.render(_sanitize_provider_error(mresp_text), None)
                 except Exception as exc:
                     provider_error = str(exc)
                 if provider_error:
@@ -634,26 +668,29 @@ No command was executed.""")
                 user_input if routed.name != "ask" else routed.args, context, mode="standard"
             )
         try:
-            with console.status("Asking model..."):
-                resp = provider.complete(
-                    ModelRequest(
-                        prompt=prompt,
-                        model=runtime.settings.model.model,
-                        provider=runtime.settings.model.provider,
-                        timeout_seconds=runtime.settings.model.timeout_seconds,
-                        metadata={
-                            "command_kind": kind,
-                            "profile": runtime.profile.name,
-                            "mode": runtime.session.mode,
-                        },
-                    )
-                )
+            resp_text, resp_streamed = _run_model_synthesis(
+                console,
+                provider,
+                ModelRequest(
+                    prompt=prompt,
+                    model=runtime.settings.model.model,
+                    provider=runtime.settings.model.provider,
+                    timeout_seconds=runtime.settings.model.timeout_seconds,
+                    metadata={
+                        "command_kind": kind,
+                        "profile": runtime.profile.name,
+                        "mode": runtime.session.mode,
+                    },
+                ),
+                raw=False,
+            )
         except Exception as exc:
             console.print(_sanitize_provider_error(str(exc)))
             continue
         with console.status("Writing artifacts..."):
             _ensure_artifact_dir(runtime)
             (runtime.session.artifact_dir / "model-response.md").write_text(
-                resp.text, encoding="utf-8"
+                resp_text, encoding="utf-8"
             )
-        renderer.render(_sanitize_provider_error(resp.text), None)
+        if not resp_streamed:
+            renderer.render(_sanitize_provider_error(resp_text), None)
