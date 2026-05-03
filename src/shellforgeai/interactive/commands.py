@@ -73,6 +73,9 @@ def route_input(text: str) -> RoutedCommand:
         "anything wrong with this pc",
         "anything wrong with my server",
         "anything wrong with this server",
+        "is my computer having any issue",
+        "so is everything okay with my computer",
+        "is everything okay with my computer",
         "is anything wrong",
         "is anything wrong with this system",
         "is my computer okay",
@@ -97,6 +100,30 @@ def route_input(text: str) -> RoutedCommand:
     ]
     if any(p in lowered for p in health_intents):
         return RoutedCommand(name="diagnose", args="health")
+    service_intents = [
+        "what services this computer is running",
+        "what services are running",
+        "what is running on this machine",
+        "what is this host running",
+        "what services are listening",
+        "what ports are open",
+        "what daemons are running",
+        "show running services",
+        "list services",
+        "list listening services",
+        "what apps are running",
+        "what is exposed",
+        "what is listening on ports",
+        "which services are active",
+    ]
+    if any(p in lowered for p in service_intents):
+        return RoutedCommand(name="diagnose", args="services")
+    if "is nginx running" in lowered:
+        return RoutedCommand(name="diagnose", args="nginx")
+    if "is ssh running" in lowered:
+        return RoutedCommand(name="diagnose", args="ssh")
+    if "is docker running" in lowered:
+        return RoutedCommand(name="diagnose", args="docker")
     for prefix, cmd in [
         ("diagnose ", "diagnose"),
         ("research ", "research"),
